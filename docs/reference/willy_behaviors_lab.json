@@ -1,0 +1,88 @@
+{
+  "initial_behaviour": "walk",
+  "turn_chance": 0.4,
+  "window": {
+    "taskbar_margin": 80
+  },
+  "physics": {
+    "gravity_px_s2": 900
+  },
+  "interactions": {
+    "drag": "drag/dangle",
+    "fall": "drag/fall",
+    "land": "drag/land"
+  },
+  "reactions": {
+    "poke": {
+      "animation": "reaction/annoyed_poked",
+      "interruptible": false
+    },
+    "pet": {
+      "animation": "reaction/happy_petted",
+      "interruptible": true
+    },
+    "startle": {
+      "animation": "reaction/startled",
+      "interruptible": false
+    }
+  },
+  "input": {
+    "click_max_movement": 9,
+    "click_max_ms": 450,
+    "drag_threshold": 18,
+    "hover_pet_min_distance": 36,
+    "hover_pet_min_reversals": 1,
+    "hover_pet_reset_ms": 550,
+    "hover_pet_cooldown_ms": 1800,
+    "hover_pet_zone_fraction": 0.82
+  },
+  "behaviours": {
+    "walk": {
+      "animation": "side/walk",
+      "loop_range": [2, 6],
+      "speed_px_s": 36,
+      "weight": 4
+    },
+    "run": {
+      "animation": "side/run",
+      "loop_range": [2, 5],
+      "speed_px_s": 144,
+      "weight": 3
+    },
+    "idle": {
+      "animation": "hero/idle",
+      "loop_range": [1, 2],
+      "weight": 2
+    },
+    "front": {
+      "animation": "front/wiggle",
+      "loop_range": [1, 2],
+      "weight": 1
+    },
+    "sit": {
+      "animation": "sitting/sit",
+      "loop_range": [1, 3],
+      "weight": 2
+    },
+    "root": {
+      "animation": "rooting/root",
+      "loop_range": [1, 3],
+      "weight": 2
+    },
+    "sleep": {
+      "animation": "sleepy/sleep",
+      "loop_range": [1, 2],
+      "weight": 1
+    },
+    "hop": {
+      "animation": "smug/hop",
+      "loop_range": [1, 2],
+      "weight": 1
+    },
+    "shake": {
+      "animation": "tactical/shake",
+      "loop_range": [1, 2],
+      "weight": 1
+    }
+  }
+}
