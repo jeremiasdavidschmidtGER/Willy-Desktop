@@ -6,9 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "willy-desktop"
 version = "0.1.0"
 description = "Willy Desktop — desktop creature (Gate A foundation)"
-# Spec pins 3.12; this machine has 3.13 — deviation recorded in the A-01
-# completion report. Contracts are stdlib-only either way.
-requires-python = ">=3.12"
+requires-python = ">=3.13"
 dependencies = [
     "PySide6>=6.7",
 ]

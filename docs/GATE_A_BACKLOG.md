@@ -46,7 +46,7 @@ INTERFACES.md defines.
 - `contracts/` implemented verbatim from INTERFACES.md (enums, events,
   commands, DTOs, protocols) + the 30-line synchronous `EventBus`
   implementation with re-entrancy guard.
-- `pyproject.toml`: Python 3.12, PySide6 pinned ≥6.7, pytest, pytest-qt,
+- `pyproject.toml`: Python 3.13, PySide6 pinned ≥6.7, pytest, pytest-qt,
   Ruff config (line length 100).
 - CI workflow: pytest + ruff on windows-latest.
 - Copy MVP_SPEC.md and AGENT_DEVELOPMENT_SPEC.md into `docs/`; add

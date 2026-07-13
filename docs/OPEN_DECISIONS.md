@@ -56,9 +56,13 @@ panel.
 persistence belongs to the Gate B state model; persisting one ad-hoc value
 now would prejudge that schema.
 
-**D-10: Python/Qt versions.** Python 3.12, PySide6 pinned ≥ 6.7,
-windows-latest CI. Packaging tool (PyInstaller vs Nuitka) deliberately
-undecided — not needed until Phase 15.
+**D-10: Python/Qt versions.** Python 3.13, PySide6 pinned ≥ 6.7,
+windows-latest CI. Pin moved 3.12 → 3.13 (2026-07-13, user decision): the
+original 3.12 rationale was only "current stable"; 3.12 is now in
+security-only maintenance, the dev machine runs 3.13, and PySide6 ≥ 6.8
+supports it — this removes the recorded A-01 venv/CI version deviation.
+Packaging tool (PyInstaller vs Nuitka) deliberately undecided — not needed
+until Phase 15.
 
 **D-11: Single-instance guard.** A second launch detects the running
 instance (lock file in `%APPDATA%/WillyDesktop/`) and exits with a message.

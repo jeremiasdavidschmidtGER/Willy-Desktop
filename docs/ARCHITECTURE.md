@@ -234,7 +234,7 @@ Migrations: numbered scripts applied by `schema_version`; forward-only.
 | 6 | Right-facing canon + load-time mirror in Gate A | Walk animation needs facing; cost is low, spec mandates it eventually |
 | 7 | Virtual-desktop coords + screen name for position | Simplest scheme that survives monitor changes with clamp fallback |
 | 8 | Restrictions enforced structurally + QA static checks | Cheaper and stronger than runtime guards |
-| 9 | Python 3.12, PySide6 ≥ 6.7 pinned | Current stable; per-monitor DPI mature in Qt 6 |
+| 9 | Python 3.13, PySide6 ≥ 6.7 pinned | Current stable (pin moved from 3.12, 2026-07-13; see D-10); per-monitor DPI mature in Qt 6 |
 | 10 | Recreate-on-corrupt DB, never block launch | Gate A criterion 10 |
 
 Forward-compatibility seams deliberately left (and nothing more):
