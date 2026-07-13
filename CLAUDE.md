@@ -1,5 +1,27 @@
 # Willy Desktop — Development Rules (Claude Code)
 
+> **Orientation for any agent landing here. Read this map first.** The map
+> below is duplicated verbatim in the asset factory's CLAUDE.md
+> (`...\Willy App\Python-Test\CLAUDE.md`) — if you change one, change both.
+
+## Willy project map — TWO git repos, one parent folder
+
+Everything Willy lives under `...\Desktop\Dateien für KI-Projekte\`:
+
+| Path | What it is | Nature |
+|---|---|---|
+| `Willy App\willy-desktop\` ← **you are here** | **Product app**: PySide6 desktop pet that *consumes* exported clips | Strict, gate-driven: no network, local-first, contracts read-only. |
+| `Willy App\Python-Test\` | **Asset factory**: concept art → animations → Gate A clip export | Art lab. Uses OpenAI API + screenshots. Experimental. |
+| `Willy App\DevelopmentSpecs\` | Product vision & specs (also copied into this repo's `docs/`) | Reference only, not a git repo. |
+| `Willy_Archive\` | Retired attempts + the **Codex reference app** | **Never work here** — but `codex-product-app\` there has A-01..A-10 implemented (unreviewed); read its `persistence/`, `ui/window/`, `platform/win32.py` as *reference* before A-02/A-03. |
+
+**Cross-repo continuity source: `...\Willy App\Python-Test\HANDOFF.md`** holds
+the project-wide *now*/*next*. Consume finished art from
+`...\Willy App\Python-Test\assets\gate_a\` (PNGs + AnimationManifest JSON) —
+that deliverable is the only thing that crosses from the factory to here.
+
+---
+
 Read before changing anything: `docs/MVP_SPEC.md`,
 `docs/AGENT_DEVELOPMENT_SPEC.md`, `docs/ARCHITECTURE.md`,
 `docs/INTERFACES.md`, then your task brief in `docs/GATE_A_BACKLOG.md`.
