@@ -23,7 +23,7 @@ and escalate.
 
 ## Engineering rules
 
-- Stack is fixed: Python 3.12, PySide6, SQLite, pytest, Ruff.
+- Stack is fixed: Python 3.13, PySide6, SQLite, pytest, Ruff.
 - Stay inside your task's **Owned paths**; never touch **Forbidden paths**.
 - `src/willy/contracts/` is read-only for implementation agents. Interface
   changes go through escalation, not edits.

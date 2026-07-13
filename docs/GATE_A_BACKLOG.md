@@ -12,7 +12,8 @@ A-01 (serial, first)
   ├── A-03 window           ├─ PARALLEL group 1
   └── A-04 asset runtime    ┘
         ├── A-05 mirroring  ┐
-        └── A-06 anim ctrl  ├─ PARALLEL group 2 (both need A-04 only)
+        └── A-06 anim ctrl  ├─ PARALLEL group 2 (A-05 needs A-04 only;
+                            ┘  A-06 also needs A-03's window for its paint hook)
 A-07 drag/drop        (needs A-02, A-03, A-06)
 A-08 click reactions  (needs A-07)          ┐
 A-09 tray controls    (needs A-03, A-06)    ├─ PARALLEL group 3
@@ -46,7 +47,7 @@ INTERFACES.md defines.
 - `contracts/` implemented verbatim from INTERFACES.md (enums, events,
   commands, DTOs, protocols) + the 30-line synchronous `EventBus`
   implementation with re-entrancy guard.
-- `pyproject.toml`: Python 3.12, PySide6 pinned ≥6.7, pytest, pytest-qt,
+- `pyproject.toml`: Python 3.13, PySide6 pinned ≥6.7, pytest, pytest-qt,
   Ruff config (line length 100).
 - CI workflow: pytest + ruff on windows-latest.
 - Copy MVP_SPEC.md and AGENT_DEVELOPMENT_SPEC.md into `docs/`; add
@@ -114,8 +115,10 @@ programmatically.
 
 **Requirements.**
 - Flags per ARCHITECTURE.md §7; `WA_TranslucentBackground`;
-  `WA_ShowWithoutActivating`; always-on-top toggleable via
-  `SetVisibility`/settings key (wiring in `app`).
+  `WA_ShowWithoutActivating`; always-on-top toggleable via the
+  `window.always_on_top` settings key, applied by the window layer (wiring
+  in `app`; no dedicated command in Gate A — `SetVisibility` is hide/show
+  only).
 - Window sized to sprite; hit area = sprite bounding box (pixel-perfect mask
   is an A-08 nicety, not required here).
 - Executes `SetWindowPosition` and `SetVisibility` commands.
@@ -238,8 +241,9 @@ clips can be interrupted by priority and return to idle when finished.
 → correct frame, no crash); priority matrix; return-to-idle;
 `AnimationFinished` emission; pause semantics.
 
-**Dependencies.** A-04 (A-05 merges in whenever ready; controller is written
-against the cache API, facing-agnostic).
+**Dependencies.** A-04; A-03 for the window paint hook (A-05 merges in
+whenever ready; controller is written against the cache API,
+facing-agnostic).
 
 ---
 

@@ -56,12 +56,13 @@ src/willy/
 **Allowed imports (strict):**
 
 ```text
-app          → everything (composition root)
-platform, ui → contracts only
-animation    → contracts only
-core         → contracts, persistence
-persistence  → contracts only
-contracts    → stdlib only
+app            → everything (composition root)
+platform, ui   → contracts only
+animation      → contracts, assets_runtime
+assets_runtime → contracts only
+core           → contracts, persistence
+persistence    → contracts only
+contracts      → stdlib only
 ```
 
 No module imports a sibling's internals. Cross-module effects travel as
@@ -108,7 +109,8 @@ a rewrite.
 **Separation guarantees (enforced by import rules + review):**
 
 - `platform`/`ui` never mutate character state; they only publish events and
-  execute `AnimationCommand`/window commands handed to them.
+  execute the animation/window commands handed to them (`PlayAnimation`,
+  `SetWindowPosition`, `SetVisibility`).
 - `animation` never decides *why*; it only plays what it's told and reports
   `AnimationFinished`.
 - Decision code (`core`) never touches Qt types. It consumes events, emits
@@ -193,8 +195,8 @@ Migrations: numbered scripts applied by `schema_version`; forward-only.
 
 ## 8. Settings, tray, and product-restriction enforcement
 
-- Tray menu: Mute, Pause animations, Hide/Show, Reset position, Exit. Each is
-  a `TrayCommand` event; `app` routes it. Mute/hide effect is immediate
+- Tray menu: Mute, Pause animations, Hide/Show, Reset position, Exit. Each
+  publishes a `TrayCommandIssued` event; `app` routes it. Mute/hide effect is immediate
   (Gate A criterion 7).
 - Product restrictions (no file modification, no input automation, no
   screenshots/keystrokes, no health advice) are structural: no module has
@@ -234,7 +236,7 @@ Migrations: numbered scripts applied by `schema_version`; forward-only.
 | 6 | Right-facing canon + load-time mirror in Gate A | Walk animation needs facing; cost is low, spec mandates it eventually |
 | 7 | Virtual-desktop coords + screen name for position | Simplest scheme that survives monitor changes with clamp fallback |
 | 8 | Restrictions enforced structurally + QA static checks | Cheaper and stronger than runtime guards |
-| 9 | Python 3.12, PySide6 ≥ 6.7 pinned | Current stable; per-monitor DPI mature in Qt 6 |
+| 9 | Python 3.13, PySide6 ≥ 6.7 pinned | Current stable (pin moved from 3.12, 2026-07-13; see D-10); per-monitor DPI mature in Qt 6 |
 | 10 | Recreate-on-corrupt DB, never block launch | Gate A criterion 10 |
 
 Forward-compatibility seams deliberately left (and nothing more):
