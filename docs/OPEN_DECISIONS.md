@@ -70,3 +70,9 @@ Cheap, prevents two Willys fighting over the DB; folded into A-03.
 
 **D-12: Asset placeholders.** Backlog tasks A-04…A-11 run on placeholder
 PNGs so agent work never blocks on art; A-12 acceptance requires final art.
+
+**D-13: "smug" pose.** MVP §6.2 lists smug among Gate A core visible states,
+but §29's essential-pose list omits it — an internal MVP inconsistency.
+Treated as required (the explicit Gate A list wins); `willy_smug` is already
+exported by the asset factory, so nothing to do. Recorded 2026-07-13 to
+prevent future "is smug canon?" churn.
