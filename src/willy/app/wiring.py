@@ -1,9 +1,10 @@
-"""Composition root for the Gate A slice built so far (A-03 + A-06 + A-07).
+"""Composition root for the Gate A slice built so far (A-03 + A-06 + A-07 +
+A-08).
 
 Wires bus, window, command router, animation controller (33 ms render
-tick), interaction controller, and persistence (restore on launch,
-debounced save, flush on quit). Everything is constructed here and only
-here (ARCHITECTURE.md §2).
+tick), interaction controller, a ~1 Hz behaviour tick (annoyance decay),
+and persistence (restore on launch, debounced save, flush on quit).
+Everything is constructed here and only here (ARCHITECTURE.md §2).
 """
 
 from __future__ import annotations
@@ -37,6 +38,8 @@ from willy.contracts import (
     SetVisibility,
     SetWindowPosition,
     ShutdownRequested,
+    TickElapsed,
+    WillyClicked,
     WillyStateSnapshot,
 )
 from willy.core.interaction import InteractionController
@@ -57,6 +60,7 @@ BLINK_INTERVAL_MS = 6000
 BLINK_ASSET_ID = "willy_idle_blink"
 PERSIST_DEBOUNCE_S = 1.0  # ARCHITECTURE §1 timer table
 BASE_SPRITE_SCALE = 2  # D-14; A-10 multiplies by per-monitor DPI factor
+BEHAVIOUR_TICK_MS = 1000  # ~1 Hz TickElapsed for annoyance decay (A-08)
 
 
 def default_assets_root() -> Path | None:
@@ -85,6 +89,8 @@ class WillyApp:
         self._last_pixmap: QPixmap | None = None
         self._render_timer: QTimer | None = None
         self._blink_timer: QTimer | None = None
+        self._behaviour_timer: QTimer | None = None
+        self._last_behaviour_tick_mono: float | None = None
         self._restored: WillyStateSnapshot | None = None
 
         # Persistence (A-07): optional so tests and asset-less modes stay
@@ -139,6 +145,8 @@ class WillyApp:
             self.bus.subscribe(DragStarted, self.interaction.on_drag_started)
             self.bus.subscribe(DragEnded, self.interaction.on_drag_ended)
             self.bus.subscribe(AnimationFinished, self.interaction.on_animation_finished)
+            self.bus.subscribe(WillyClicked, self.interaction.on_willy_clicked)
+            self.bus.subscribe(TickElapsed, self.interaction.on_tick_elapsed)
         else:
             if sprite is None:
                 raise ValueError("either sprite or assets_root is required")
@@ -163,10 +171,13 @@ class WillyApp:
             self._render_timer.start(RENDER_TICK_MS)
             if BLINK_ASSET_ID in self._library.asset_ids:
                 # Provisional idle-blink default so Willy visibly blinks in
-                # Gate A; real behaviour selection replaces this (A-08+).
+                # Gate A; real behaviour selection replaces this (later gates).
                 self._blink_timer = QTimer(self.window)
                 self._blink_timer.timeout.connect(self._blink)
                 self._blink_timer.start(BLINK_INTERVAL_MS)
+            self._behaviour_timer = QTimer(self.window)
+            self._behaviour_timer.timeout.connect(self.behaviour_tick)
+            self._behaviour_timer.start(BEHAVIOUR_TICK_MS)
         self.bus.publish(AppStarted(timestamp=self.clock.now()))
 
     def render_tick(self) -> None:
@@ -180,11 +191,21 @@ class WillyApp:
             self._last_pixmap = pixmap
             self.window.set_pixmap(pixmap)
 
+    def behaviour_tick(self) -> None:
+        """Publishes TickElapsed (~1 Hz) so core can decay annoyance (A-08)."""
+        now = self.clock.monotonic()
+        if self._last_behaviour_tick_mono is None:
+            dt = BEHAVIOUR_TICK_MS / 1000
+        else:
+            dt = now - self._last_behaviour_tick_mono
+        self._last_behaviour_tick_mono = now
+        self.bus.publish(TickElapsed(timestamp=self.clock.now(), dt_seconds=dt))
+
     def shutdown(self) -> None:
         if self._shutdown_published:
             return
         self._shutdown_published = True
-        for timer in (self._render_timer, self._blink_timer):
+        for timer in (self._render_timer, self._blink_timer, self._behaviour_timer):
             if timer is not None:
                 timer.stop()
         if self._state_writer is not None:

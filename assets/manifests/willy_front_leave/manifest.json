@@ -1,0 +1,35 @@
+{
+  "asset_id": "willy_front_leave",
+  "source_direction": "RIGHT",
+  "mirror_allowed": true,
+  "loop": false,
+  "priority": "INTERACTION",
+  "frames": [
+    {
+      "image": "willy_front_leave_00.png",
+      "duration_ms": 71
+    },
+    {
+      "image": "willy_front_leave_01.png",
+      "duration_ms": 71
+    },
+    {
+      "image": "willy_front_leave_02.png",
+      "duration_ms": 71
+    },
+    {
+      "image": "willy_front_leave_03.png",
+      "duration_ms": 71
+    }
+  ],
+  "anchors": {
+    "body_pivot": [
+      48,
+      53
+    ],
+    "ground": [
+      48,
+      84
+    ]
+  }
+}
