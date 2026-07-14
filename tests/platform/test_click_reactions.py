@@ -51,7 +51,7 @@ def escalate_to_smug(app, qtbot, fake_clock):
     advance_render(app, fake_clock, 0.5)  # enter finishes -> holding
     click(app, qtbot)  # 2: still tier 1, refreshes the hold
     click(app, qtbot)  # 3: tier now "annoyed" -> turns away first
-    advance_render(app, fake_clock, 0.5)  # leave finishes -> annoyed plays
+    advance_render(app, fake_clock, 0.8)  # leave (8 frames) finishes -> annoyed plays
     click(app, qtbot)  # 4
     click(app, qtbot)  # 5
     click(app, qtbot)  # 6: tier now "smug"
@@ -70,7 +70,7 @@ def test_front_hold_lasts_a_few_seconds_then_returns_to_idle(app, qtbot, fake_cl
     advance_render(app, fake_clock, 1.0)  # plain rendering never erodes the hold
     assert app.controller.current_animation_id == "willy_front_idle"
     quiet_period(app, fake_clock, seconds=FRONT_HOLD_SECONDS + 0.1)  # expires the hold
-    advance_render(app, fake_clock, 0.5)  # lets the leave clip play out
+    advance_render(app, fake_clock, 0.8)  # lets the leave clip (8 frames) play out
     assert app.controller.current_animation_id == "willy_idle"
 
 
@@ -83,7 +83,7 @@ def test_repeated_clicks_escalate_through_distinct_tiers(app, qtbot, fake_clock)
     assert app.controller.current_animation_id == "willy_front_idle"
     click(app, qtbot)  # 3: tier now "annoyed" -> turn away first
     assert app.controller.current_animation_id == "willy_front_leave"
-    advance_render(app, fake_clock, 0.5)  # leave finishes -> annoyed plays
+    advance_render(app, fake_clock, 0.8)  # leave (8 frames) finishes -> annoyed plays
     assert app.controller.current_animation_id == "willy_annoyed"
     click(app, qtbot)  # 4: still "annoyed" tier
     click(app, qtbot)  # 5: still "annoyed" tier

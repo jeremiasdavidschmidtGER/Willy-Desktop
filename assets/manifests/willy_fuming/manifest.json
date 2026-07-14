@@ -1,0 +1,67 @@
+{
+  "asset_id": "willy_fuming",
+  "source_direction": "RIGHT",
+  "mirror_allowed": true,
+  "loop": false,
+  "priority": "REACTION",
+  "frames": [
+    {
+      "image": "willy_fuming_00.png",
+      "duration_ms": 56
+    },
+    {
+      "image": "willy_fuming_01.png",
+      "duration_ms": 56
+    },
+    {
+      "image": "willy_fuming_02.png",
+      "duration_ms": 56
+    },
+    {
+      "image": "willy_fuming_03.png",
+      "duration_ms": 56
+    },
+    {
+      "image": "willy_fuming_04.png",
+      "duration_ms": 56
+    },
+    {
+      "image": "willy_fuming_05.png",
+      "duration_ms": 56
+    },
+    {
+      "image": "willy_fuming_06.png",
+      "duration_ms": 56
+    },
+    {
+      "image": "willy_fuming_07.png",
+      "duration_ms": 56
+    },
+    {
+      "image": "willy_fuming_08.png",
+      "duration_ms": 56
+    },
+    {
+      "image": "willy_fuming_09.png",
+      "duration_ms": 56
+    },
+    {
+      "image": "willy_fuming_10.png",
+      "duration_ms": 56
+    },
+    {
+      "image": "willy_fuming_11.png",
+      "duration_ms": 56
+    }
+  ],
+  "anchors": {
+    "body_pivot": [
+      62,
+      75
+    ],
+    "ground": [
+      62,
+      99
+    ]
+  }
+}

@@ -25,8 +25,8 @@ def test_all_shipped_gate_a_manifests_validate(qapp, repo_assets):
     library = AssetLibrary(repo_assets, strict=True)
     library.load()
     assert GATE_A_CHECKLIST <= set(library.asset_ids)
-    # checklist + run, sit_down, sit_up, front_enter, front_idle, front_leave
-    assert len(library.asset_ids) == 18
+    # checklist + run, sit_down, sit_up, front_enter, front_idle, front_leave, fuming
+    assert len(library.asset_ids) == 19
 
 
 def test_unknown_asset_strict_raises(asset_root):
