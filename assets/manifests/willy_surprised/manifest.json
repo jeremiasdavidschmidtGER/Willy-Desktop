@@ -1,0 +1,107 @@
+{
+  "asset_id": "willy_surprised",
+  "source_direction": "RIGHT",
+  "mirror_allowed": true,
+  "loop": false,
+  "priority": "REACTION",
+  "frames": [
+    {
+      "image": "willy_surprised_00.png",
+      "duration_ms": 56
+    },
+    {
+      "image": "willy_surprised_01.png",
+      "duration_ms": 56
+    },
+    {
+      "image": "willy_surprised_02.png",
+      "duration_ms": 56
+    },
+    {
+      "image": "willy_surprised_03.png",
+      "duration_ms": 56
+    },
+    {
+      "image": "willy_surprised_04.png",
+      "duration_ms": 56
+    },
+    {
+      "image": "willy_surprised_05.png",
+      "duration_ms": 56
+    },
+    {
+      "image": "willy_surprised_06.png",
+      "duration_ms": 56
+    },
+    {
+      "image": "willy_surprised_07.png",
+      "duration_ms": 56
+    },
+    {
+      "image": "willy_surprised_08.png",
+      "duration_ms": 56
+    },
+    {
+      "image": "willy_surprised_09.png",
+      "duration_ms": 56
+    },
+    {
+      "image": "willy_surprised_10.png",
+      "duration_ms": 56
+    },
+    {
+      "image": "willy_surprised_11.png",
+      "duration_ms": 56
+    },
+    {
+      "image": "willy_surprised_12.png",
+      "duration_ms": 56
+    },
+    {
+      "image": "willy_surprised_13.png",
+      "duration_ms": 56
+    },
+    {
+      "image": "willy_surprised_14.png",
+      "duration_ms": 56
+    },
+    {
+      "image": "willy_surprised_15.png",
+      "duration_ms": 56
+    },
+    {
+      "image": "willy_surprised_16.png",
+      "duration_ms": 56
+    },
+    {
+      "image": "willy_surprised_17.png",
+      "duration_ms": 56
+    },
+    {
+      "image": "willy_surprised_18.png",
+      "duration_ms": 56
+    },
+    {
+      "image": "willy_surprised_19.png",
+      "duration_ms": 56
+    },
+    {
+      "image": "willy_surprised_20.png",
+      "duration_ms": 56
+    },
+    {
+      "image": "willy_surprised_21.png",
+      "duration_ms": 56
+    }
+  ],
+  "anchors": {
+    "body_pivot": [
+      43,
+      91
+    ],
+    "ground": [
+      43,
+      127
+    ]
+  }
+}

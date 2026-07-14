@@ -1,0 +1,47 @@
+{
+  "asset_id": "willy_sit_down",
+  "source_direction": "RIGHT",
+  "mirror_allowed": true,
+  "loop": false,
+  "priority": "AMBIENT",
+  "frames": [
+    {
+      "image": "willy_sit_down_00.png",
+      "duration_ms": 83
+    },
+    {
+      "image": "willy_sit_down_01.png",
+      "duration_ms": 83
+    },
+    {
+      "image": "willy_sit_down_02.png",
+      "duration_ms": 83
+    },
+    {
+      "image": "willy_sit_down_03.png",
+      "duration_ms": 83
+    },
+    {
+      "image": "willy_sit_down_04.png",
+      "duration_ms": 83
+    },
+    {
+      "image": "willy_sit_down_05.png",
+      "duration_ms": 83
+    },
+    {
+      "image": "willy_sit_down_06.png",
+      "duration_ms": 83
+    }
+  ],
+  "anchors": {
+    "body_pivot": [
+      49,
+      48
+    ],
+    "ground": [
+      49,
+      78
+    ]
+  }
+}

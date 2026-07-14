@@ -1,0 +1,31 @@
+{
+  "asset_id": "willy_idle_blink",
+  "source_direction": "RIGHT",
+  "mirror_allowed": true,
+  "loop": false,
+  "priority": "IDLE",
+  "frames": [
+    {
+      "image": "willy_idle_blink_00.png",
+      "duration_ms": 83
+    },
+    {
+      "image": "willy_idle_blink_01.png",
+      "duration_ms": 83
+    }
+  ],
+  "anchors": {
+    "body_pivot": [
+      44,
+      51
+    ],
+    "ground": [
+      44,
+      81
+    ],
+    "eyes": [
+      56,
+      49
+    ]
+  }
+}

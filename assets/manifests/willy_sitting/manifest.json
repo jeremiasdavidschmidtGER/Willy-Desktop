@@ -1,0 +1,115 @@
+{
+  "asset_id": "willy_sitting",
+  "source_direction": "RIGHT",
+  "mirror_allowed": true,
+  "loop": true,
+  "priority": "AMBIENT",
+  "frames": [
+    {
+      "image": "willy_sitting_00.png",
+      "duration_ms": 67
+    },
+    {
+      "image": "willy_sitting_01.png",
+      "duration_ms": 67
+    },
+    {
+      "image": "willy_sitting_02.png",
+      "duration_ms": 67
+    },
+    {
+      "image": "willy_sitting_03.png",
+      "duration_ms": 67
+    },
+    {
+      "image": "willy_sitting_04.png",
+      "duration_ms": 67
+    },
+    {
+      "image": "willy_sitting_05.png",
+      "duration_ms": 67
+    },
+    {
+      "image": "willy_sitting_06.png",
+      "duration_ms": 67
+    },
+    {
+      "image": "willy_sitting_07.png",
+      "duration_ms": 67
+    },
+    {
+      "image": "willy_sitting_08.png",
+      "duration_ms": 67
+    },
+    {
+      "image": "willy_sitting_09.png",
+      "duration_ms": 67
+    },
+    {
+      "image": "willy_sitting_10.png",
+      "duration_ms": 67
+    },
+    {
+      "image": "willy_sitting_11.png",
+      "duration_ms": 67
+    },
+    {
+      "image": "willy_sitting_12.png",
+      "duration_ms": 67
+    },
+    {
+      "image": "willy_sitting_13.png",
+      "duration_ms": 67
+    },
+    {
+      "image": "willy_sitting_14.png",
+      "duration_ms": 67
+    },
+    {
+      "image": "willy_sitting_15.png",
+      "duration_ms": 67
+    },
+    {
+      "image": "willy_sitting_16.png",
+      "duration_ms": 67
+    },
+    {
+      "image": "willy_sitting_17.png",
+      "duration_ms": 67
+    },
+    {
+      "image": "willy_sitting_18.png",
+      "duration_ms": 67
+    },
+    {
+      "image": "willy_sitting_19.png",
+      "duration_ms": 67
+    },
+    {
+      "image": "willy_sitting_20.png",
+      "duration_ms": 67
+    },
+    {
+      "image": "willy_sitting_21.png",
+      "duration_ms": 67
+    },
+    {
+      "image": "willy_sitting_22.png",
+      "duration_ms": 67
+    },
+    {
+      "image": "willy_sitting_23.png",
+      "duration_ms": 67
+    }
+  ],
+  "anchors": {
+    "body_pivot": [
+      53,
+      84
+    ],
+    "ground": [
+      53,
+      111
+    ]
+  }
+}

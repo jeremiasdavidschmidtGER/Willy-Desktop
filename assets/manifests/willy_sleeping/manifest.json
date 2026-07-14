@@ -1,0 +1,163 @@
+{
+  "asset_id": "willy_sleeping",
+  "source_direction": "RIGHT",
+  "mirror_allowed": true,
+  "loop": true,
+  "priority": "AMBIENT",
+  "frames": [
+    {
+      "image": "willy_sleeping_00.png",
+      "duration_ms": 100
+    },
+    {
+      "image": "willy_sleeping_01.png",
+      "duration_ms": 100
+    },
+    {
+      "image": "willy_sleeping_02.png",
+      "duration_ms": 100
+    },
+    {
+      "image": "willy_sleeping_03.png",
+      "duration_ms": 100
+    },
+    {
+      "image": "willy_sleeping_04.png",
+      "duration_ms": 100
+    },
+    {
+      "image": "willy_sleeping_05.png",
+      "duration_ms": 100
+    },
+    {
+      "image": "willy_sleeping_06.png",
+      "duration_ms": 100
+    },
+    {
+      "image": "willy_sleeping_07.png",
+      "duration_ms": 100
+    },
+    {
+      "image": "willy_sleeping_08.png",
+      "duration_ms": 100
+    },
+    {
+      "image": "willy_sleeping_09.png",
+      "duration_ms": 100
+    },
+    {
+      "image": "willy_sleeping_10.png",
+      "duration_ms": 100
+    },
+    {
+      "image": "willy_sleeping_11.png",
+      "duration_ms": 100
+    },
+    {
+      "image": "willy_sleeping_12.png",
+      "duration_ms": 100
+    },
+    {
+      "image": "willy_sleeping_13.png",
+      "duration_ms": 100
+    },
+    {
+      "image": "willy_sleeping_14.png",
+      "duration_ms": 100
+    },
+    {
+      "image": "willy_sleeping_15.png",
+      "duration_ms": 100
+    },
+    {
+      "image": "willy_sleeping_16.png",
+      "duration_ms": 100
+    },
+    {
+      "image": "willy_sleeping_17.png",
+      "duration_ms": 100
+    },
+    {
+      "image": "willy_sleeping_18.png",
+      "duration_ms": 100
+    },
+    {
+      "image": "willy_sleeping_19.png",
+      "duration_ms": 100
+    },
+    {
+      "image": "willy_sleeping_20.png",
+      "duration_ms": 100
+    },
+    {
+      "image": "willy_sleeping_21.png",
+      "duration_ms": 100
+    },
+    {
+      "image": "willy_sleeping_22.png",
+      "duration_ms": 100
+    },
+    {
+      "image": "willy_sleeping_23.png",
+      "duration_ms": 100
+    },
+    {
+      "image": "willy_sleeping_24.png",
+      "duration_ms": 100
+    },
+    {
+      "image": "willy_sleeping_25.png",
+      "duration_ms": 100
+    },
+    {
+      "image": "willy_sleeping_26.png",
+      "duration_ms": 100
+    },
+    {
+      "image": "willy_sleeping_27.png",
+      "duration_ms": 100
+    },
+    {
+      "image": "willy_sleeping_28.png",
+      "duration_ms": 100
+    },
+    {
+      "image": "willy_sleeping_29.png",
+      "duration_ms": 100
+    },
+    {
+      "image": "willy_sleeping_30.png",
+      "duration_ms": 100
+    },
+    {
+      "image": "willy_sleeping_31.png",
+      "duration_ms": 100
+    },
+    {
+      "image": "willy_sleeping_32.png",
+      "duration_ms": 100
+    },
+    {
+      "image": "willy_sleeping_33.png",
+      "duration_ms": 100
+    },
+    {
+      "image": "willy_sleeping_34.png",
+      "duration_ms": 100
+    },
+    {
+      "image": "willy_sleeping_35.png",
+      "duration_ms": 100
+    }
+  ],
+  "anchors": {
+    "body_pivot": [
+      53,
+      81
+    ],
+    "ground": [
+      53,
+      109
+    ]
+  }
+}
