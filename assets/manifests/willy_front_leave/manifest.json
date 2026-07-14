@@ -20,22 +20,6 @@
     {
       "image": "willy_front_leave_03.png",
       "duration_ms": 71
-    },
-    {
-      "image": "willy_front_leave_04.png",
-      "duration_ms": 71
-    },
-    {
-      "image": "willy_front_leave_05.png",
-      "duration_ms": 71
-    },
-    {
-      "image": "willy_front_leave_06.png",
-      "duration_ms": 71
-    },
-    {
-      "image": "willy_front_leave_07.png",
-      "duration_ms": 71
     }
   ],
   "anchors": {

@@ -130,10 +130,14 @@ front-facing sequence, `leave` plays first and the side-view reaction
 avoiding a jump-cut straight from facing the camera to a side-view pose
 (second round of live feedback). `on_drag_started`/`on_fall_started` reset
 the front-sequence state, since a real drag (REACTION priority) always
-preempts it visually regardless. Known rough edge, not yet fixed: the
-`leave` clip's last frame stops at a 3/4 angle, while `willy_annoyed`/
-`willy_smug` start at a full side profile — a real angle/size mismatch,
-live-confirmed as "a bit rough." Queued as a new-art request:
-`Python-Test/codex_requests/willy_front_leave_smoothing.md`. Broader
-front/side transition polish logged as a lower-priority idea in
-`docs/IDEAS_BACKLOG.md`.
+preempts it visually regardless. Known rough edge, tried and reverted:
+the `leave` clip's last frame stops at a 3/4 angle, while `willy_annoyed`/
+`willy_smug` start at a full side profile — live-confirmed as "a bit
+rough." A Codex request (`Python-Test/codex_requests/done/
+willy_front_leave_smoothing.md`) extended `leave` 4→8 frames to land on a
+genuine side profile; live-tested again, it made the transition read as
+*more* shapeshifting, not less, so it was reverted back to the original
+4 frames. Recorded as failure/lesson #25 in the asset factory's
+`README.md`: a geometrically-correct bridge between two poses isn't the
+same as a *good* transition. Broader front/side transition polish stays
+logged as a lower-priority, unsolved idea in `docs/IDEAS_BACKLOG.md`.

@@ -42,10 +42,14 @@ gate picks them up, not for Gate A.
   "FRONT" pose had already been extracted and animated in the asset
   factory's raw pipeline output — it just never got bridged/exported to
   Gate A. No new art generation needed; see `OPEN_DECISIONS.md` D-17.
-- ~~**The front-facing ↔ side-view transformation could be smoother.**~~
-  **Resolved for the leave→reaction handoff:** `willy_front_leave`
-  extended from 4 to 8 frames (via `codex_requests/
-  willy_front_leave_smoothing.md`) so it now ends on a real side profile
-  instead of a 3/4 angle. The broader idea (the *enter* side, and any
-  other front/side transition) is still just a polish note, not
-  scheduled.
+- **The front-facing ↔ side-view transformation could be smoother — still
+  unsolved, one fix attempted and reverted.** `willy_front_leave` was
+  extended from 4 to 8 frames (via `codex_requests/done/
+  willy_front_leave_smoothing.md`) to end on a real side profile instead
+  of a 3/4 angle. Live-tested: it made the transition read as *more*
+  shapeshifting, not less, so it was reverted back to 4 frames — see
+  `OPEN_DECISIONS.md` D-17 and the asset factory's `README.md` failure
+  #25 for the full story. Whatever the eventual fix is, it isn't "just
+  add more in-between frames." Still open, still a detail for later
+  stages — the *enter* side (and any other front/side transition) is
+  untouched too.
