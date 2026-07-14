@@ -8,6 +8,8 @@ steals keyboard focus.
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from PySide6.QtCore import QPoint, Qt
 from PySide6.QtGui import QPainter, QPixmap
 from PySide6.QtWidgets import QWidget
@@ -31,6 +33,7 @@ class WillyWindow(QWidget):
         *,
         bus: EventBus | None = None,
         clock: Clock | None = None,
+        on_fall_started: Callable[[], None] | None = None,
     ) -> None:
         super().__init__(None)
         if sprite.isNull():
@@ -38,6 +41,7 @@ class WillyWindow(QWidget):
         self._pixmap = sprite
         self._bus = bus
         self._clock = clock
+        self._on_fall_started = on_fall_started
         self._press_global: QPoint | None = None
         self._grab_offset: QPoint | None = None
         self._dragging = False
@@ -63,6 +67,12 @@ class WillyWindow(QWidget):
             raise ValueError("Willy sprite pixmap is null")
         self._pixmap = pixmap
         self.setFixedSize(self._pixmap.size())
+        if not self._dragging and not self._falling:
+            # Different clips can have different frame heights (e.g. the
+            # sprawled landing pose vs. standing idle); re-anchor so his
+            # feet stay on the ground line (D-15) instead of drifting with
+            # whichever clip just switched in. Never snap mid-air/mid-drag.
+            self.move(self.x(), self.floor_y())
         self.update()
 
     def show_without_activating(self) -> None:
@@ -140,6 +150,8 @@ class WillyWindow(QWidget):
         self._fall_velocity = 0.0
         self._fall_y = float(self.y())
         self._fall_last_mono = self._clock.monotonic()
+        if self._on_fall_started is not None:
+            self._on_fall_started()
 
     def mousePressEvent(self, event) -> None:  # noqa: N802
         if event.button() == Qt.MouseButton.LeftButton:

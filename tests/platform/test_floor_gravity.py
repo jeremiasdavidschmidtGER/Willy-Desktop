@@ -108,3 +108,25 @@ def test_step_fall_is_noop_when_not_falling(rig, fake_clock):
     window.step_fall()
     assert window.pos() == position
     assert drag_ended == []
+
+
+def test_grounded_resize_stays_on_the_floor(rig):
+    # Different clips can have different frame heights; a grounded Willy
+    # must keep his feet on the line regardless of which pose is shown.
+    window, _ = rig
+    window.snap_to_floor()
+    taller = QPixmap(32, 60)
+    taller.fill(Qt.GlobalColor.transparent)
+    window.set_pixmap(taller)
+    assert window.y() == window.floor_y()
+
+
+def test_midair_resize_does_not_snap_to_floor(rig, qtbot):
+    window, _ = rig
+    drag_and_release(window, qtbot)
+    assert window.falling
+    y_before = window.y()
+    taller = QPixmap(32, 60)
+    taller.fill(Qt.GlobalColor.transparent)
+    window.set_pixmap(taller)
+    assert window.y() == y_before  # unchanged: never snap mid-fall

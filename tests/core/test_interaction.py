@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 import pytest
 
 from willy.contracts import (
+    AnimationFinished,
     AnimationPriority,
     DragEnded,
     DragStarted,
@@ -89,3 +90,52 @@ def test_drag_ended_without_started_still_lands_safely(rig):
     assert commands[-1].animation_id == "willy_drop_landing"
     assert controller.facing is Facing.RIGHT  # no grab point: facing kept
     assert dirty == [True]
+
+
+# --- D-16: startle reaction at the start of a real gravity fall ---
+
+
+def test_fall_started_plays_startle_pose(rig):
+    controller, commands, _ = rig
+    controller.on_fall_started()
+    assert commands[-1].animation_id == "willy_surprised"
+    assert commands[-1].priority is AnimationPriority.REACTION
+
+
+def test_fall_started_uses_current_facing(rig):
+    controller, commands, _ = rig
+    drag(controller, grab_x=100, drop_x=40)  # flips to LEFT
+    controller.on_fall_started()
+    assert commands[-1].facing is Facing.LEFT
+
+
+def test_startle_finished_while_still_falling_resumes_dragged():
+    commands = []
+    controller = InteractionController(
+        dispatch=commands.append, state_dirty=lambda: None, is_falling=lambda: True
+    )
+    controller.on_fall_started()
+    controller.on_animation_finished(
+        AnimationFinished(timestamp=TS, animation_id="willy_surprised")
+    )
+    assert [command.animation_id for command in commands] == ["willy_surprised", "willy_dragged"]
+
+
+def test_startle_finished_after_landing_does_not_resume_dragged():
+    commands = []
+    controller = InteractionController(
+        dispatch=commands.append, state_dirty=lambda: None, is_falling=lambda: False
+    )
+    controller.on_fall_started()
+    controller.on_animation_finished(
+        AnimationFinished(timestamp=TS, animation_id="willy_surprised")
+    )
+    assert [command.animation_id for command in commands] == [
+        "willy_surprised"
+    ]  # no extra dispatch
+
+
+def test_unrelated_animation_finished_is_ignored(rig):
+    controller, commands, _ = rig
+    controller.on_animation_finished(AnimationFinished(timestamp=TS, animation_id="willy_walk"))
+    assert commands == []

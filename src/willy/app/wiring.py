@@ -24,6 +24,7 @@ from willy.app.placeholder import build_placeholder_sprite
 from willy.app.router import CommandRouter
 from willy.assets_runtime.pixmap_cache import PixmapCache
 from willy.contracts import (
+    AnimationFinished,
     AnimationPriority,
     AppStarted,
     Clock,
@@ -123,14 +124,21 @@ class WillyApp:
                     )
                 )
             self._last_pixmap = self.controller.tick()
-            self.window = WillyWindow(self._last_pixmap, bus=self.bus, clock=clock)
             self.interaction = InteractionController(
                 dispatch=self.router.dispatch,
                 state_dirty=self._mark_state_dirty,
                 initial_facing=initial_facing,
+                is_falling=lambda: self.window.falling,
+            )
+            self.window = WillyWindow(
+                self._last_pixmap,
+                bus=self.bus,
+                clock=clock,
+                on_fall_started=self.interaction.on_fall_started,
             )
             self.bus.subscribe(DragStarted, self.interaction.on_drag_started)
             self.bus.subscribe(DragEnded, self.interaction.on_drag_ended)
+            self.bus.subscribe(AnimationFinished, self.interaction.on_animation_finished)
         else:
             if sprite is None:
                 raise ValueError("either sprite or assets_root is required")
