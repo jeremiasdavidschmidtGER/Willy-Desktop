@@ -1,0 +1,67 @@
+{
+  "asset_id": "willy_run",
+  "source_direction": "RIGHT",
+  "mirror_allowed": true,
+  "loop": true,
+  "priority": "AMBIENT",
+  "frames": [
+    {
+      "image": "willy_run_00.png",
+      "duration_ms": 56
+    },
+    {
+      "image": "willy_run_01.png",
+      "duration_ms": 56
+    },
+    {
+      "image": "willy_run_02.png",
+      "duration_ms": 56
+    },
+    {
+      "image": "willy_run_03.png",
+      "duration_ms": 56
+    },
+    {
+      "image": "willy_run_04.png",
+      "duration_ms": 56
+    },
+    {
+      "image": "willy_run_05.png",
+      "duration_ms": 56
+    },
+    {
+      "image": "willy_run_06.png",
+      "duration_ms": 56
+    },
+    {
+      "image": "willy_run_07.png",
+      "duration_ms": 56
+    },
+    {
+      "image": "willy_run_08.png",
+      "duration_ms": 56
+    },
+    {
+      "image": "willy_run_09.png",
+      "duration_ms": 56
+    },
+    {
+      "image": "willy_run_10.png",
+      "duration_ms": 56
+    },
+    {
+      "image": "willy_run_11.png",
+      "duration_ms": 56
+    }
+  ],
+  "anchors": {
+    "body_pivot": [
+      58,
+      59
+    ],
+    "ground": [
+      58,
+      89
+    ]
+  }
+}

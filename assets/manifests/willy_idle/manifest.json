@@ -1,0 +1,119 @@
+{
+  "asset_id": "willy_idle",
+  "source_direction": "RIGHT",
+  "mirror_allowed": true,
+  "loop": true,
+  "priority": "IDLE",
+  "frames": [
+    {
+      "image": "willy_idle_00.png",
+      "duration_ms": 83
+    },
+    {
+      "image": "willy_idle_01.png",
+      "duration_ms": 83
+    },
+    {
+      "image": "willy_idle_02.png",
+      "duration_ms": 83
+    },
+    {
+      "image": "willy_idle_03.png",
+      "duration_ms": 83
+    },
+    {
+      "image": "willy_idle_04.png",
+      "duration_ms": 83
+    },
+    {
+      "image": "willy_idle_05.png",
+      "duration_ms": 83
+    },
+    {
+      "image": "willy_idle_06.png",
+      "duration_ms": 83
+    },
+    {
+      "image": "willy_idle_07.png",
+      "duration_ms": 83
+    },
+    {
+      "image": "willy_idle_08.png",
+      "duration_ms": 83
+    },
+    {
+      "image": "willy_idle_09.png",
+      "duration_ms": 83
+    },
+    {
+      "image": "willy_idle_10.png",
+      "duration_ms": 83
+    },
+    {
+      "image": "willy_idle_11.png",
+      "duration_ms": 83
+    },
+    {
+      "image": "willy_idle_12.png",
+      "duration_ms": 83
+    },
+    {
+      "image": "willy_idle_13.png",
+      "duration_ms": 83
+    },
+    {
+      "image": "willy_idle_14.png",
+      "duration_ms": 83
+    },
+    {
+      "image": "willy_idle_15.png",
+      "duration_ms": 83
+    },
+    {
+      "image": "willy_idle_16.png",
+      "duration_ms": 83
+    },
+    {
+      "image": "willy_idle_17.png",
+      "duration_ms": 83
+    },
+    {
+      "image": "willy_idle_18.png",
+      "duration_ms": 83
+    },
+    {
+      "image": "willy_idle_19.png",
+      "duration_ms": 83
+    },
+    {
+      "image": "willy_idle_20.png",
+      "duration_ms": 83
+    },
+    {
+      "image": "willy_idle_21.png",
+      "duration_ms": 83
+    },
+    {
+      "image": "willy_idle_22.png",
+      "duration_ms": 83
+    },
+    {
+      "image": "willy_idle_23.png",
+      "duration_ms": 83
+    }
+  ],
+  "anchors": {
+    "body_pivot": [
+      44,
+      51
+    ],
+    "ground": [
+      44,
+      81
+    ],
+    "eyes": [
+      56,
+      49
+    ]
+  }
+}
