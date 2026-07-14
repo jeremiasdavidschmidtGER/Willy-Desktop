@@ -1,8 +1,9 @@
-"""Composition root for the Gate A slice built so far (A-03 + A-06).
+"""Composition root for the Gate A slice built so far (A-03 + A-06 + A-07).
 
-Wires bus, window, command router, and — when the asset root is
-available — the animation controller with its 33 ms render tick.
-Everything is constructed here and only here (ARCHITECTURE.md §2).
+Wires bus, window, command router, animation controller (33 ms render
+tick), interaction controller, and persistence (restore on launch,
+debounced save, flush on quit). Everything is constructed here and only
+here (ARCHITECTURE.md §2).
 """
 
 from __future__ import annotations
@@ -26,12 +27,24 @@ from willy.contracts import (
     AnimationPriority,
     AppStarted,
     Clock,
+    DragEnded,
+    DragStarted,
+    Facing,
     PlayAnimation,
     ScreenPoint,
     SetPaused,
     SetVisibility,
     SetWindowPosition,
     ShutdownRequested,
+    WillyStateSnapshot,
+)
+from willy.core.interaction import InteractionController
+from willy.persistence import (
+    Database,
+    DebouncedWriter,
+    SQLiteSettingsRepository,
+    SQLiteWillyStateRepository,
+    default_database_path,
 )
 from willy.platform.single_instance import SingleInstanceGuard
 from willy.ui.window.willy_window import WillyWindow
@@ -41,6 +54,7 @@ LOGGER = logging.getLogger(__name__)
 RENDER_TICK_MS = 33  # ~30 fps (ARCHITECTURE §1)
 BLINK_INTERVAL_MS = 6000
 BLINK_ASSET_ID = "willy_idle_blink"
+PERSIST_DEBOUNCE_S = 1.0  # ARCHITECTURE §1 timer table
 
 
 def default_assets_root() -> Path | None:
@@ -58,15 +72,32 @@ class WillyApp:
         clock: Clock,
         sprite: QPixmap | None = None,
         assets_root: Path | None = None,
+        db_path: Path | None = None,
         bus: SyncEventBus | None = None,
     ) -> None:
         self.bus = bus or SyncEventBus()
         self.clock = clock
         self.router = CommandRouter()
         self.controller: WillyAnimationController | None = None
+        self.interaction: InteractionController | None = None
         self._last_pixmap: QPixmap | None = None
         self._render_timer: QTimer | None = None
         self._blink_timer: QTimer | None = None
+        self._restored: WillyStateSnapshot | None = None
+
+        # Persistence (A-07): optional so tests and asset-less modes stay
+        # side-effect free. db_path=None disables it entirely.
+        self._db: Database | None = None
+        self._state_repo: SQLiteWillyStateRepository | None = None
+        self._settings_repo: SQLiteSettingsRepository | None = None
+        self._state_writer: DebouncedWriter | None = None
+        if db_path is not None:
+            self._db = Database(db_path, clock=clock)
+            self._db.open()
+            self._state_repo = SQLiteWillyStateRepository(self._db)
+            self._settings_repo = SQLiteSettingsRepository(self._db)
+            self._state_writer = DebouncedWriter(self._flush_state, clock, PERSIST_DEBOUNCE_S)
+            self._restored = self._state_repo.load()
 
         if assets_root is not None:
             library = AssetLibrary(assets_root, strict=False)
@@ -77,12 +108,33 @@ class WillyApp:
             )
             self.router.register(PlayAnimation, self.controller.play)
             self.router.register(SetPaused, self._execute_set_paused)
+            initial_facing = self._restored.facing if self._restored else Facing.RIGHT
+            if initial_facing is not Facing.RIGHT:
+                self.router.dispatch(
+                    PlayAnimation(
+                        animation_id=self.controller.current_animation_id,
+                        facing=initial_facing,
+                        priority=AnimationPriority.IDLE,
+                    )
+                )
             self._last_pixmap = self.controller.tick()
-            self.window = WillyWindow(self._last_pixmap)
+            self.window = WillyWindow(self._last_pixmap, bus=self.bus, clock=clock)
+            self.interaction = InteractionController(
+                dispatch=self.router.dispatch,
+                state_dirty=self._mark_state_dirty,
+                initial_facing=initial_facing,
+            )
+            self.bus.subscribe(DragStarted, self.interaction.on_drag_started)
+            self.bus.subscribe(DragEnded, self.interaction.on_drag_ended)
         else:
             if sprite is None:
                 raise ValueError("either sprite or assets_root is required")
-            self.window = WillyWindow(sprite)
+            self.window = WillyWindow(sprite, bus=self.bus, clock=clock)
+
+        if self._settings_repo is not None:
+            self.window.set_always_on_top(
+                self._settings_repo.get_bool("window.always_on_top", True)
+            )
 
         self.router.register(SetWindowPosition, self._execute_set_window_position)
         self.router.register(SetVisibility, self._execute_set_visibility)
@@ -104,6 +156,8 @@ class WillyApp:
         self.bus.publish(AppStarted(timestamp=self.clock.now()))
 
     def render_tick(self) -> None:
+        if self._state_writer is not None:
+            self._state_writer.maybe_flush()  # debounce polling (D-6 style)
         if self.controller is None:
             return
         pixmap = self.controller.tick()
@@ -118,7 +172,29 @@ class WillyApp:
         for timer in (self._render_timer, self._blink_timer):
             if timer is not None:
                 timer.stop()
+        if self._state_writer is not None:
+            self._state_writer.mark_dirty()  # persist final position even
+            self._state_writer.flush()  # without a preceding drag
+        if self._db is not None:
+            self._db.close()
         self.bus.publish(ShutdownRequested(timestamp=self.clock.now()))
+
+    def _mark_state_dirty(self) -> None:
+        if self._state_writer is not None:
+            self._state_writer.mark_dirty()
+
+    def _flush_state(self) -> None:
+        assert self._state_repo is not None
+        facing = self.interaction.facing if self.interaction is not None else Facing.RIGHT
+        screen = self.window.screen()
+        self._state_repo.save(
+            WillyStateSnapshot(
+                position=ScreenPoint(x=self.window.x(), y=self.window.y()),
+                screen_name=screen.name() if screen is not None else "",
+                facing=facing,
+                updated_at=self.clock.now(),
+            )
+        )
 
     def _blink(self) -> None:
         assert self.controller is not None
@@ -141,8 +217,9 @@ class WillyApp:
         self.window.set_visibility(command.visible)
 
     def _initial_position(self) -> ScreenPoint:
-        # No persistence hookup in A-03 (A-07 restores saved position):
-        # centre of the primary screen's available area.
+        # Restored position wins (A-07); off-screen clamping is A-10.
+        if self._restored is not None:
+            return self._restored.position
         screen = QGuiApplication.primaryScreen()
         if screen is None:
             return ScreenPoint(x=100, y=100)
@@ -170,16 +247,17 @@ def run_app(sprite_path: str | None = None) -> int:
     try:
         qapp = QApplication.instance() or QApplication([])
         clock = SystemClock()
+        db_path = default_database_path()
         if sprite_path is not None:
             # Explicit --sprite: static single-frame mode.
-            app = WillyApp(sprite=load_sprite(sprite_path), clock=clock)
+            app = WillyApp(sprite=load_sprite(sprite_path), clock=clock, db_path=db_path)
         else:
             assets_root = default_assets_root()
             if assets_root is not None:
-                app = WillyApp(assets_root=assets_root, clock=clock)
+                app = WillyApp(assets_root=assets_root, clock=clock, db_path=db_path)
             else:
                 LOGGER.error("assets/manifests not found; static placeholder Willy")
-                app = WillyApp(sprite=build_placeholder_sprite(), clock=clock)
+                app = WillyApp(sprite=build_placeholder_sprite(), clock=clock, db_path=db_path)
         qapp.aboutToQuit.connect(app.shutdown)
         app.start()
         return qapp.exec()
