@@ -30,13 +30,15 @@ def test_second_load_hits_cache(asset_root):
     assert cache.image_loads == loads_after_first == 2
 
 
-def test_left_facing_serves_canon_without_reloading(asset_root):
-    # A-04 behaviour: mirroring arrives with A-05 behind this same API.
+def test_left_facing_mirrors_without_reloading_files(asset_root):
+    # A-05: LEFT is a mirrored variant built from the cached canon —
+    # no additional file reads.
     cache = make_cache(asset_root)
     right = cache.frames("willy_idle", Facing.RIGHT)
     loads = cache.image_loads
     left = cache.frames("willy_idle", Facing.LEFT)
-    assert left is right
+    assert left is not right  # mirror_allowed=True: distinct pixmaps
+    assert len(left) == len(right)
     assert cache.image_loads == loads
 
 
