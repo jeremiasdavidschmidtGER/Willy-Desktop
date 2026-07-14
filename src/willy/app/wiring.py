@@ -13,7 +13,7 @@ import logging
 from pathlib import Path
 
 from PySide6.QtCore import QTimer
-from PySide6.QtGui import QGuiApplication, QPixmap
+from PySide6.QtGui import QGuiApplication, QIcon, QPixmap
 from PySide6.QtWidgets import QApplication
 
 import willy
@@ -23,6 +23,7 @@ from willy.app.bus import SyncEventBus
 from willy.app.clock import SystemClock
 from willy.app.placeholder import build_placeholder_sprite
 from willy.app.router import CommandRouter
+from willy.app.tray_commands import TrayCommandHandler, TrayState
 from willy.assets_runtime.pixmap_cache import PixmapCache
 from willy.contracts import (
     AnimationFinished,
@@ -34,11 +35,13 @@ from willy.contracts import (
     Facing,
     PlayAnimation,
     ScreenPoint,
+    SetMuted,
     SetPaused,
     SetVisibility,
     SetWindowPosition,
     ShutdownRequested,
     TickElapsed,
+    TrayCommandIssued,
     WillyClicked,
     WillyStateSnapshot,
 )
@@ -51,6 +54,7 @@ from willy.persistence import (
     default_database_path,
 )
 from willy.platform.single_instance import SingleInstanceGuard
+from willy.ui.tray.tray_icon import WillyTrayIcon
 from willy.ui.window.willy_window import WillyWindow
 
 LOGGER = logging.getLogger(__name__)
@@ -119,7 +123,6 @@ class WillyApp:
                 scale=BASE_SPRITE_SCALE,
             )
             self.router.register(PlayAnimation, self.controller.play)
-            self.router.register(SetPaused, self._execute_set_paused)
             initial_facing = self._restored.facing if self._restored else Facing.RIGHT
             if initial_facing is not Facing.RIGHT:
                 self.router.dispatch(
@@ -159,7 +162,36 @@ class WillyApp:
 
         self.router.register(SetWindowPosition, self._execute_set_window_position)
         self.router.register(SetVisibility, self._execute_set_visibility)
+        self.router.register(SetPaused, self._execute_set_paused)
+        self.router.register(SetMuted, self._execute_set_muted)
         self._shutdown_published = False
+
+        # Tray (A-09): built regardless of asset mode so --sprite debug runs
+        # still get working controls; SetPaused/SetMuted are safe no-ops
+        # above when there is no controller.
+        tray_state = (
+            TrayCommandHandler.load_state(self._settings_repo)
+            if self._settings_repo is not None
+            else TrayState()
+        )
+        self._tray_handler = TrayCommandHandler(
+            state=tray_state,
+            settings_repository=self._settings_repo,
+            emit_command=self.router.dispatch,
+            reset_position=self._primary_screen_center,
+            mark_state_dirty=self._mark_state_dirty,
+            quit_app=self._request_exit,
+        )
+        self._tray_icon = WillyTrayIcon(
+            icon=QIcon(self.window.pixmap),
+            bus=self.bus,
+            clock=clock,
+            muted=tray_state.muted,
+            paused=tray_state.paused,
+            hidden=tray_state.hidden,
+        )
+        self.bus.subscribe(TrayCommandIssued, self._on_tray_command)
+        self._tray_handler.apply_startup_state()
 
     def start(self) -> None:
         self.window.set_window_position(self._initial_position())
@@ -178,6 +210,7 @@ class WillyApp:
             self._behaviour_timer = QTimer(self.window)
             self._behaviour_timer.timeout.connect(self.behaviour_tick)
             self._behaviour_timer.start(BEHAVIOUR_TICK_MS)
+        self._tray_icon.show()
         self.bus.publish(AppStarted(timestamp=self.clock.now()))
 
     def render_tick(self) -> None:
@@ -208,6 +241,7 @@ class WillyApp:
         for timer in (self._render_timer, self._blink_timer, self._behaviour_timer):
             if timer is not None:
                 timer.stop()
+        self._tray_icon.hide()
         if self._state_writer is not None:
             self._state_writer.mark_dirty()  # persist final position even
             self._state_writer.flush()  # without a preceding drag
@@ -222,15 +256,18 @@ class WillyApp:
     def _flush_state(self) -> None:
         assert self._state_repo is not None
         facing = self.interaction.facing if self.interaction is not None else Facing.RIGHT
-        screen = self.window.screen()
         self._state_repo.save(
             WillyStateSnapshot(
                 position=ScreenPoint(x=self.window.x(), y=self.window.y()),
-                screen_name=screen.name() if screen is not None else "",
+                screen_name=self._current_screen_name(),
                 facing=facing,
                 updated_at=self.clock.now(),
             )
         )
+
+    def _current_screen_name(self) -> str:
+        screen = self.window.screen()
+        return screen.name() if screen is not None else ""
 
     def _blink(self) -> None:
         assert self.controller is not None
@@ -243,8 +280,12 @@ class WillyApp:
         )
 
     def _execute_set_paused(self, command: SetPaused) -> None:
-        assert self.controller is not None
-        self.controller.set_paused(command.paused)
+        if self.controller is not None:
+            self.controller.set_paused(command.paused)
+
+    def _execute_set_muted(self, command: SetMuted) -> None:
+        # Gate A: no audio sink exists yet; this is a logged stub (A-09 brief).
+        LOGGER.info("mute toggled: muted=%s (no audio sink yet)", command.muted)
 
     def _execute_set_window_position(self, command: SetWindowPosition) -> None:
         self.window.set_window_position(command.point)
@@ -252,10 +293,23 @@ class WillyApp:
     def _execute_set_visibility(self, command: SetVisibility) -> None:
         self.window.set_visibility(command.visible)
 
+    def _on_tray_command(self, event: TrayCommandIssued) -> None:
+        state = self._tray_handler.handle(event)
+        self._tray_icon.update_state(muted=state.muted, paused=state.paused, hidden=state.hidden)
+
+    def _request_exit(self) -> None:
+        self.shutdown()
+        app_instance = QApplication.instance()
+        if app_instance is not None:
+            app_instance.quit()
+
     def _initial_position(self) -> ScreenPoint:
         # Restored position wins (A-07); off-screen clamping is A-10.
         if self._restored is not None:
             return self._restored.position
+        return self._primary_screen_center()
+
+    def _primary_screen_center(self) -> ScreenPoint:
         screen = QGuiApplication.primaryScreen()
         if screen is None:
             return ScreenPoint(x=100, y=100)
