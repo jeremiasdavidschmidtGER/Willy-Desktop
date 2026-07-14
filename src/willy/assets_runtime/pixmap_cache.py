@@ -1,11 +1,10 @@
-"""Pixmap cache keyed (asset_id, facing) — A-04 loading, A-05 mirroring.
+"""Pixmap cache keyed (asset_id, facing, scale) — A-04 loading, A-05
+mirroring, D-14 integer scaling.
 
-Loads each clip's files from disk exactly once and mirrors once per
-asset (INTERFACES.md §5): both facings live in the cache after first
-use. `mirror_allowed=False` assets are served as-is for either facing.
-No scaling, no smoothing here: pixmaps are served at native pixel
-resolution and any scaling downstream must be nearest-neighbour at
-integer factors.
+Loads each clip's files from disk exactly once, mirrors once per asset
+(INTERFACES.md §5), and scales once per (asset, facing, factor) —
+nearest-neighbour at integer factors only, never smoothed. Anchors stay
+in native pixel coordinates (D-14).
 """
 
 from __future__ import annotations
@@ -13,6 +12,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Mapping
 
+from PySide6.QtCore import Qt
 from PySide6.QtGui import QPixmap
 
 from willy.animation.library import AssetLibrary
@@ -27,10 +27,11 @@ class PixmapCache:
     def __init__(self, library: AssetLibrary, *, logger: logging.Logger | None = None) -> None:
         self._library = library
         self._logger = logger or LOGGER
-        self._cache: dict[tuple[str, Facing], tuple[QPixmap, ...]] = {}
+        self._cache: dict[tuple[str, Facing, int], tuple[QPixmap, ...]] = {}
         self._anchor_cache: dict[tuple[str, Facing], Mapping[str, tuple[int, int]]] = {}
         self._image_loads = 0  # test-observable: cache hits add nothing
         self._mirror_ops = 0  # test-observable: mirroring happens once per asset
+        self._scale_ops = 0  # test-observable: scaling happens once per factor
 
     @property
     def image_loads(self) -> int:
@@ -40,25 +41,42 @@ class PixmapCache:
     def mirror_ops(self) -> int:
         return self._mirror_ops
 
-    def frames(self, asset_id: str, facing: Facing) -> tuple[QPixmap, ...]:
-        key = (asset_id, facing)
+    @property
+    def scale_ops(self) -> int:
+        return self._scale_ops
+
+    def frames(self, asset_id: str, facing: Facing, scale: int = 1) -> tuple[QPixmap, ...]:
+        if not isinstance(scale, int) or scale < 1:
+            raise ValueError(f"scale must be a positive integer, got {scale!r}")
+        key = (asset_id, facing, scale)
         cached = self._cache.get(key)
         if cached is not None:
             return cached
 
-        if facing is not Facing.RIGHT:
-            canon = self.frames(asset_id, Facing.RIGHT)
+        if scale != 1:
+            native = self.frames(asset_id, facing, 1)
+            frames = tuple(self._scaled(pixmap, scale) for pixmap in native)
+            self._scale_ops += len(frames)
+        elif facing is not Facing.RIGHT:
+            canon = self.frames(asset_id, Facing.RIGHT, 1)
             if self._library.manifest(asset_id).mirror_allowed:
                 frames = tuple(mirror_pixmap(pixmap) for pixmap in canon)
                 self._mirror_ops += len(frames)
             else:
                 frames = canon  # neutral asset: served as-is for either facing
-            self._cache[key] = frames
-            return frames
-
-        frames = self._load(asset_id)
+        else:
+            frames = self._load(asset_id)
         self._cache[key] = frames
         return frames
+
+    @staticmethod
+    def _scaled(pixmap: QPixmap, scale: int) -> QPixmap:
+        return pixmap.scaled(
+            pixmap.width() * scale,
+            pixmap.height() * scale,
+            Qt.AspectRatioMode.IgnoreAspectRatio,
+            Qt.TransformationMode.FastTransformation,  # nearest-neighbour
+        )
 
     def anchors(self, asset_id: str, facing: Facing) -> Mapping[str, tuple[int, int]]:
         """Anchor positions valid for the frames served under this facing."""

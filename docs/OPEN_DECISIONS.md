@@ -76,3 +76,22 @@ but §29's essential-pose list omits it — an internal MVP inconsistency.
 Treated as required (the explicit Gate A list wins); `willy_smug` is already
 exported by the asset factory, so nothing to do. Recorded 2026-07-13 to
 prevent future "is smug canon?" churn.
+
+**D-14: Base sprite scale 2×.** (2026-07-14, user decision after live demo.)
+Native art (~90 px) is too quiet for a character meant to demand attention.
+Runtime renders at a base integer scale of 2 (nearest-neighbour, via the
+pixmap cache); A-10 multiplies this by the per-monitor DPI factor. Anchors
+stay in native pixel coordinates. Crude in-betweens being more visible at 2×
+is an art-iteration item for the factory, not a runtime concern.
+
+**D-15: Floor gravity on drop.** (2026-07-14, user decision after live demo;
+parameters salvaged from the retired lab, `docs/reference/
+willy_behaviors_lab.json`.) Willy lives on a ground line (bottom of the
+current screen's available geometry): releasing a drag starts a gravity fall
+(900 px/s²) stepped by the render tick; `DragEnded` is published at *impact*,
+so the landing clip plays when he hits the floor — no contract change needed.
+Launch snaps him to the floor (x restored exactly; y is derived). Deliberate
+trade-off: mid-screen parking is gone — a hovering boar was conceptually
+wrong, and Gate B floor-walking needs the ground line anyway. Gate A
+criterion 4 ("position survives restart") is interpreted as: x within 1 px,
+y = floor.

@@ -34,12 +34,14 @@ class WillyAnimationController:
         bus: EventBus,
         clock: Clock,
         idle_asset_id: str = FALLBACK_ASSET_ID,
+        scale: int = 1,
     ) -> None:
         self._cache = cache
         self._library = library
         self._bus = bus
         self._clock = clock
         self._idle_asset_id = idle_asset_id
+        self._scale = scale  # base integer scale (D-14); A-10 multiplies DPI
         self._paused = False
         self._pause_started = 0.0
         # populated by _play_idle:
@@ -101,7 +103,9 @@ class WillyAnimationController:
             )
             durations = [frame.duration_ms for frame in self._manifest.frames]
             selection = select_frame(durations, self._elapsed(), self._loop)
-        return self._cache.frames(self._manifest.asset_id, self._facing)[selection.index]
+        return self._cache.frames(self._manifest.asset_id, self._facing, self._scale)[
+            selection.index
+        ]
 
     def _play_idle(self, facing: Facing) -> None:
         manifest = self._library.manifest(self._idle_asset_id)
