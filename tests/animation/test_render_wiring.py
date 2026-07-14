@@ -21,10 +21,11 @@ def test_default_assets_root_points_at_repo():
     assert (root / "willy_idle" / "manifest.json").is_file()
 
 
-def test_animated_mode_starts_on_idle_sized_to_art(app):
+def test_animated_mode_starts_on_idle_at_base_scale(app):
     assert app.controller is not None
     assert app.controller.current_animation_id == "willy_idle"
-    assert (app.window.width(), app.window.height()) == (90, 84)  # native art size
+    # native 90x84 art at the 2x base scale (D-14)
+    assert (app.window.width(), app.window.height()) == (180, 168)
 
 
 def test_render_tick_updates_window_pixmap_only_on_change(app, fake_clock):

@@ -76,3 +76,37 @@ but §29's essential-pose list omits it — an internal MVP inconsistency.
 Treated as required (the explicit Gate A list wins); `willy_smug` is already
 exported by the asset factory, so nothing to do. Recorded 2026-07-13 to
 prevent future "is smug canon?" churn.
+
+**D-14: Base sprite scale 2×.** (2026-07-14, user decision after live demo.)
+Native art (~90 px) is too quiet for a character meant to demand attention.
+Runtime renders at a base integer scale of 2 (nearest-neighbour, via the
+pixmap cache); A-10 multiplies this by the per-monitor DPI factor. Anchors
+stay in native pixel coordinates. Crude in-betweens being more visible at 2×
+is an art-iteration item for the factory, not a runtime concern.
+
+**D-15: Floor gravity on drop.** (2026-07-14, user decision after live demo;
+parameters salvaged from the retired lab, `docs/reference/
+willy_behaviors_lab.json`.) Willy lives on a ground line (bottom of the
+current screen's available geometry): releasing a drag starts a gravity fall
+(900 px/s²) stepped by the render tick; `DragEnded` is published at *impact*,
+so the landing clip plays when he hits the floor — no contract change needed.
+Launch snaps him to the floor (x restored exactly; y is derived). Deliberate
+trade-off: mid-screen parking is gone — a hovering boar was conceptually
+wrong, and Gate B floor-walking needs the ground line anyway. Gate A
+criterion 4 ("position survives restart") is interpreted as: x within 1 px,
+y = floor. Implementation note found while building this: since clips can
+have different frame heights, a grounded (not falling, not dragging) Willy
+is re-snapped to the floor line whenever his sprite changes size — otherwise
+switching poses at rest would make him drift off the ground.
+
+**D-16: Startle reaction at fall start.** (2026-07-14, user decision — the
+"extra distressed frame" remembered from an earlier build.) The retired lab
+had three separate drag poses (`dangle`/`fall`/`land`); Gate A only shipped
+two (`willy_dragged`, `willy_drop_landing`). `willy_surprised` — already
+exported, checklist-required by MVP §6.2, previously unused anywhere — fills
+the missing middle: releasing a drag plays it once (REACTION), and if the
+fall is still going when it finishes, `willy_dragged` resumes for the rest
+of the drop (via the same "finished-handler play() wins over idle" seam
+A-06 already has — no controller change needed). A very short release near
+the floor lands instantly and skips the startle entirely, since there is
+nothing to interrupt.

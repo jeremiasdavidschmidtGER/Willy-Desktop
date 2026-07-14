@@ -24,6 +24,7 @@ from willy.app.placeholder import build_placeholder_sprite
 from willy.app.router import CommandRouter
 from willy.assets_runtime.pixmap_cache import PixmapCache
 from willy.contracts import (
+    AnimationFinished,
     AnimationPriority,
     AppStarted,
     Clock,
@@ -55,6 +56,7 @@ RENDER_TICK_MS = 33  # ~30 fps (ARCHITECTURE §1)
 BLINK_INTERVAL_MS = 6000
 BLINK_ASSET_ID = "willy_idle_blink"
 PERSIST_DEBOUNCE_S = 1.0  # ARCHITECTURE §1 timer table
+BASE_SPRITE_SCALE = 2  # D-14; A-10 multiplies by per-monitor DPI factor
 
 
 def default_assets_root() -> Path | None:
@@ -104,7 +106,11 @@ class WillyApp:
             library.load()
             self._library = library
             self.controller = WillyAnimationController(
-                cache=PixmapCache(library), library=library, bus=self.bus, clock=clock
+                cache=PixmapCache(library),
+                library=library,
+                bus=self.bus,
+                clock=clock,
+                scale=BASE_SPRITE_SCALE,
             )
             self.router.register(PlayAnimation, self.controller.play)
             self.router.register(SetPaused, self._execute_set_paused)
@@ -118,14 +124,21 @@ class WillyApp:
                     )
                 )
             self._last_pixmap = self.controller.tick()
-            self.window = WillyWindow(self._last_pixmap, bus=self.bus, clock=clock)
             self.interaction = InteractionController(
                 dispatch=self.router.dispatch,
                 state_dirty=self._mark_state_dirty,
                 initial_facing=initial_facing,
+                is_falling=lambda: self.window.falling,
+            )
+            self.window = WillyWindow(
+                self._last_pixmap,
+                bus=self.bus,
+                clock=clock,
+                on_fall_started=self.interaction.on_fall_started,
             )
             self.bus.subscribe(DragStarted, self.interaction.on_drag_started)
             self.bus.subscribe(DragEnded, self.interaction.on_drag_ended)
+            self.bus.subscribe(AnimationFinished, self.interaction.on_animation_finished)
         else:
             if sprite is None:
                 raise ValueError("either sprite or assets_root is required")
@@ -143,6 +156,7 @@ class WillyApp:
     def start(self) -> None:
         self.window.set_window_position(self._initial_position())
         self.window.show_without_activating()
+        self.window.snap_to_floor()  # Willy lives on the ground line (D-15)
         if self.controller is not None:
             self._render_timer = QTimer(self.window)
             self._render_timer.timeout.connect(self.render_tick)
@@ -156,6 +170,7 @@ class WillyApp:
         self.bus.publish(AppStarted(timestamp=self.clock.now()))
 
     def render_tick(self) -> None:
+        self.window.step_fall()  # gravity physics, no-op unless falling (D-15)
         if self._state_writer is not None:
             self._state_writer.maybe_flush()  # debounce polling (D-6 style)
         if self.controller is None:

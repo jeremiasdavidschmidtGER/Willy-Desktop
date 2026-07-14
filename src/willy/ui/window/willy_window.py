@@ -8,6 +8,8 @@ steals keyboard focus.
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from PySide6.QtCore import QPoint, Qt
 from PySide6.QtGui import QPainter, QPixmap
 from PySide6.QtWidgets import QWidget
@@ -15,6 +17,7 @@ from PySide6.QtWidgets import QWidget
 from willy.contracts import Clock, DragEnded, DragStarted, EventBus, ScreenPoint
 
 DRAG_THRESHOLD_PX = 4  # press+move below this stays a click, not a drag
+GRAVITY_PX_S2 = 900.0  # D-15, tuned value from the retired lab
 
 
 class WillyWindow(QWidget):
@@ -30,6 +33,7 @@ class WillyWindow(QWidget):
         *,
         bus: EventBus | None = None,
         clock: Clock | None = None,
+        on_fall_started: Callable[[], None] | None = None,
     ) -> None:
         super().__init__(None)
         if sprite.isNull():
@@ -37,9 +41,14 @@ class WillyWindow(QWidget):
         self._pixmap = sprite
         self._bus = bus
         self._clock = clock
+        self._on_fall_started = on_fall_started
         self._press_global: QPoint | None = None
         self._grab_offset: QPoint | None = None
         self._dragging = False
+        self._falling = False
+        self._fall_velocity = 0.0
+        self._fall_y = 0.0
+        self._fall_last_mono = 0.0
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint
             | Qt.WindowType.Tool
@@ -58,6 +67,12 @@ class WillyWindow(QWidget):
             raise ValueError("Willy sprite pixmap is null")
         self._pixmap = pixmap
         self.setFixedSize(self._pixmap.size())
+        if not self._dragging and not self._falling:
+            # Different clips can have different frame heights (e.g. the
+            # sprawled landing pose vs. standing idle); re-anchor so his
+            # feet stay on the ground line (D-15) instead of drifting with
+            # whichever clip just switched in. Never snap mid-air/mid-drag.
+            self.move(self.x(), self.floor_y())
         self.update()
 
     def show_without_activating(self) -> None:
@@ -85,14 +100,62 @@ class WillyWindow(QWidget):
         painter.drawPixmap(0, 0, self._pixmap)
         painter.end()
 
-    # --- dragging (A-07): the window reports facts, core decides ---
+    # --- dragging (A-07) + floor gravity (D-15): facts out, core decides ---
 
     @property
     def dragging(self) -> bool:
         return self._dragging
 
+    @property
+    def falling(self) -> bool:
+        return self._falling
+
+    def floor_y(self) -> int:
+        """Window y so that Willy stands on the screen's available bottom."""
+        screen = self.screen()
+        if screen is None:
+            return self.y()
+        return screen.availableGeometry().bottom() - self.height() + 1
+
+    def snap_to_floor(self) -> None:
+        self.move(self.x(), self.floor_y())
+
+    def step_fall(self) -> None:
+        """Advance the gravity fall; driven by the render tick (D-15)."""
+        if not self._falling or self._clock is None:
+            return
+        now = self._clock.monotonic()
+        dt = max(0.0, now - self._fall_last_mono)
+        self._fall_last_mono = now
+        self._fall_velocity += GRAVITY_PX_S2 * dt
+        self._fall_y += self._fall_velocity * dt
+        floor = self.floor_y()
+        if self._fall_y >= floor:
+            self._falling = False
+            self._fall_velocity = 0.0
+            self.move(self.x(), floor)
+            # Impact is when the drag interaction truly ends: landing clip
+            # and position save key off this event (D-15).
+            self._publish(DragEnded, drop_point=ScreenPoint(x=self.x(), y=floor))
+            return
+        self.move(self.x(), round(self._fall_y))
+
+    def _begin_fall(self) -> None:
+        if self._clock is None or self.y() >= self.floor_y():
+            # No clock to step with, or already grounded: land instantly.
+            self.move(self.x(), self.floor_y())
+            self._publish(DragEnded, drop_point=ScreenPoint(x=self.x(), y=self.y()))
+            return
+        self._falling = True
+        self._fall_velocity = 0.0
+        self._fall_y = float(self.y())
+        self._fall_last_mono = self._clock.monotonic()
+        if self._on_fall_started is not None:
+            self._on_fall_started()
+
     def mousePressEvent(self, event) -> None:  # noqa: N802
         if event.button() == Qt.MouseButton.LeftButton:
+            self._falling = False  # mid-air grab cancels the fall
             global_pos = event.globalPosition().toPoint()
             self._press_global = global_pos
             self._grab_offset = global_pos - self.pos()
@@ -125,7 +188,7 @@ class WillyWindow(QWidget):
             self._grab_offset = None
             self._dragging = False
             if was_dragging:
-                self._publish(DragEnded, drop_point=ScreenPoint(x=self.x(), y=self.y()))
+                self._begin_fall()  # DragEnded is published at impact (D-15)
             event.accept()
             return
         super().mouseReleaseEvent(event)

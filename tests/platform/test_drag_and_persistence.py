@@ -34,20 +34,27 @@ class TestWindowDrag:
         window.show_without_activating()
         return window, events
 
-    def test_press_move_release_drags_window_and_publishes(self, rig, qtbot):
+    def test_press_move_release_drags_then_falls_to_floor(self, rig, qtbot, fake_clock):
         window, events = rig
-        start_pos = window.pos()
+        start_x = window.x()
         qtbot.mousePress(window, Qt.MouseButton.LeftButton, pos=QPoint(5, 5))
         qtbot.mouseMove(window, QPoint(45, 25))  # well past the 4 px threshold
         qtbot.mouseRelease(window, Qt.MouseButton.LeftButton, pos=QPoint(45, 25))
-        assert [type(event).__name__ for event in events] == ["DragStarted", "DragEnded"]
-        assert window.pos() != start_pos
-        # grab offset kept: cursor at widget-local (5,5) grabbed, released at
-        # local (45,25) → window moved by the same delta
-        delta = window.pos() - start_pos
-        assert (delta.x(), delta.y()) == (40, 20)
-        assert events[1].drop_point.x == window.x()
+        # Release does not end the interaction: Willy falls first (D-15).
+        assert [type(event).__name__ for event in events] == ["DragStarted"]
         assert not window.dragging
+        # grab offset kept horizontally: local (5,5) → (45,25) is +40 in x
+        assert window.x() - start_x == 40
+        for _ in range(400):  # step gravity until impact
+            if not window.falling:
+                break
+            fake_clock.advance(0.033)
+            window.step_fall()
+        assert not window.falling
+        assert [type(event).__name__ for event in events] == ["DragStarted", "DragEnded"]
+        assert window.y() == window.floor_y()
+        assert events[1].drop_point.x == window.x()
+        assert events[1].drop_point.y == window.floor_y()
 
     def test_click_without_move_is_not_a_drag(self, rig, qtbot):
         window, events = rig
@@ -63,6 +70,8 @@ class TestWindowDrag:
         qtbot.mouseMove(window, QPoint(30, 30))
         qtbot.mouseRelease(window, Qt.MouseButton.LeftButton, pos=QPoint(30, 30))
         assert not window.dragging  # no crash, no events, movement works
+        # no clock to step a fall with → lands instantly on the floor
+        assert window.y() == window.floor_y()
 
 
 class TestPositionPersistenceWiring:
@@ -86,7 +95,9 @@ class TestPositionPersistenceWiring:
         restarted = self.make_app(tmp_path, fake_clock)
         qtbot.addWidget(restarted.window)
         restarted.start()
-        assert (restarted.window.x(), restarted.window.y()) == (321, 111)  # within 1 px
+        # D-15: x restores exactly (within 1 px criterion); y is the floor.
+        assert restarted.window.x() == 321
+        assert restarted.window.y() == restarted.window.floor_y()
         assert restarted.interaction.facing is Facing.LEFT
         assert restarted.controller.current_facing is Facing.LEFT
 
@@ -100,7 +111,8 @@ class TestPositionPersistenceWiring:
         restarted = self.make_app(tmp_path, fake_clock)
         qtbot.addWidget(restarted.window)
         restarted.start()
-        assert (restarted.window.x(), restarted.window.y()) == (77, 66)
+        assert restarted.window.x() == 77
+        assert restarted.window.y() == restarted.window.floor_y()  # D-15
 
     def test_debounce_does_not_write_before_interval(self, qtbot, tmp_path, fake_clock):
         app = self.make_app(tmp_path, fake_clock)
