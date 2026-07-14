@@ -53,6 +53,14 @@ from willy.persistence import (
     SQLiteWillyStateRepository,
     default_database_path,
 )
+from willy.platform.screens import (
+    ScreenGeometry,
+    ScreenLayoutMonitor,
+    current_screens,
+    primary_screen_geometry,
+    resolve_restore_position,
+    scale_factor_for_dpi,
+)
 from willy.platform.single_instance import SingleInstanceGuard
 from willy.ui.tray.tray_icon import WillyTrayIcon
 from willy.ui.window.willy_window import WillyWindow
@@ -115,12 +123,14 @@ class WillyApp:
             library = AssetLibrary(assets_root, strict=False)
             library.load()
             self._library = library
+            primary = primary_screen_geometry()
+            dpi_scale = scale_factor_for_dpi(primary.device_pixel_ratio) if primary else 1
             self.controller = WillyAnimationController(
                 cache=PixmapCache(library),
                 library=library,
                 bus=self.bus,
                 clock=clock,
-                scale=BASE_SPRITE_SCALE,
+                scale=BASE_SPRITE_SCALE * dpi_scale,
             )
             self.router.register(PlayAnimation, self.controller.play)
             initial_facing = self._restored.facing if self._restored else Facing.RIGHT
@@ -193,6 +203,19 @@ class WillyApp:
         self.bus.subscribe(TrayCommandIssued, self._on_tray_command)
         self._tray_handler.apply_startup_state()
 
+        # Multi-monitor recovery (A-10): live screenAdded/Removed relocation;
+        # the at-launch clamp uses the same resolve_restore_position in
+        # _initial_position below.
+        self._screen_monitor = ScreenLayoutMonitor(
+            bus=self.bus,
+            clock=clock,
+            get_screens=current_screens,
+            get_primary=self._primary_geometry,
+            get_window_state=self._current_window_state,
+            set_window_position=self.window.set_window_position,
+            mark_state_dirty=self._mark_state_dirty,
+        )
+
     def start(self) -> None:
         self.window.set_window_position(self._initial_position())
         self.window.show_without_activating()
@@ -242,6 +265,7 @@ class WillyApp:
             if timer is not None:
                 timer.stop()
         self._tray_icon.hide()
+        self._screen_monitor.close()
         if self._state_writer is not None:
             self._state_writer.mark_dirty()  # persist final position even
             self._state_writer.flush()  # without a preceding drag
@@ -268,6 +292,14 @@ class WillyApp:
     def _current_screen_name(self) -> str:
         screen = self.window.screen()
         return screen.name() if screen is not None else ""
+
+    def _current_window_state(self) -> tuple[str, ScreenPoint, int, int]:
+        return (
+            self._current_screen_name(),
+            ScreenPoint(x=self.window.x(), y=self.window.y()),
+            self.window.width(),
+            self.window.height(),
+        )
 
     def _blink(self) -> None:
         assert self.controller is not None
@@ -304,9 +336,21 @@ class WillyApp:
             app_instance.quit()
 
     def _initial_position(self) -> ScreenPoint:
-        # Restored position wins (A-07); off-screen clamping is A-10.
+        # Restored position wins (A-07), clamped back onto a live screen if
+        # its saved screen is gone or it now falls off every screen (A-10,
+        # ARCHITECTURE §7).
         if self._restored is not None:
-            return self._restored.position
+            primary = primary_screen_geometry()
+            if primary is None:
+                return self._restored.position
+            return resolve_restore_position(
+                screen_name=self._restored.screen_name,
+                point=self._restored.position,
+                sprite_width=self.window.width(),
+                sprite_height=self.window.height(),
+                screens=current_screens(),
+                primary=primary,
+            )
         return self._primary_screen_center()
 
     def _primary_screen_center(self) -> ScreenPoint:
@@ -317,6 +361,11 @@ class WillyApp:
         return ScreenPoint(
             x=centre.x() - self.window.width() // 2,
             y=centre.y() - self.window.height() // 2,
+        )
+
+    def _primary_geometry(self) -> ScreenGeometry:
+        return primary_screen_geometry() or ScreenGeometry(
+            name="", x=0, y=0, width=self.window.width(), height=self.window.height()
         )
 
 
