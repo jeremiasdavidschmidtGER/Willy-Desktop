@@ -10,7 +10,7 @@ from PySide6.QtGui import QPixmap
 
 from willy.app.bus import SyncEventBus
 from willy.app.wiring import WillyApp
-from willy.contracts import DragEnded, DragStarted, Facing, ScreenPoint
+from willy.contracts import DragEnded, DragStarted, Facing, MouseButton, ScreenPoint, WillyClicked
 from willy.ui.window.willy_window import WillyWindow
 
 REPO_ASSETS = Path(__file__).parent.parent.parent / "assets" / "manifests"
@@ -29,6 +29,7 @@ class TestWindowDrag:
         events = []
         bus.subscribe(DragStarted, events.append)
         bus.subscribe(DragEnded, events.append)
+        bus.subscribe(WillyClicked, events.append)
         window = WillyWindow(sprite(), bus=bus, clock=fake_clock)
         qtbot.addWidget(window)
         window.show_without_activating()
@@ -60,7 +61,34 @@ class TestWindowDrag:
         window, events = rig
         qtbot.mousePress(window, Qt.MouseButton.LeftButton, pos=QPoint(5, 5))
         qtbot.mouseRelease(window, Qt.MouseButton.LeftButton, pos=QPoint(6, 5))
-        assert events == []  # below threshold: no drag events
+        # below threshold: no drag events, but a click is published (A-08)
+        assert [type(event).__name__ for event in events] == ["WillyClicked"]
+        assert events[0].button is MouseButton.LEFT
+        assert events[0].clicks_in_last_10s == 1
+
+    def test_repeated_clicks_roll_up_the_10s_count(self, rig, qtbot):
+        window, events = rig
+        for _ in range(3):
+            qtbot.mousePress(window, Qt.MouseButton.LeftButton, pos=QPoint(5, 5))
+            qtbot.mouseRelease(window, Qt.MouseButton.LeftButton, pos=QPoint(5, 5))
+        assert [event.clicks_in_last_10s for event in events] == [1, 2, 3]
+
+    def test_click_count_ages_out_after_10s(self, rig, qtbot, fake_clock):
+        window, events = rig
+        qtbot.mousePress(window, Qt.MouseButton.LeftButton, pos=QPoint(5, 5))
+        qtbot.mouseRelease(window, Qt.MouseButton.LeftButton, pos=QPoint(5, 5))
+        fake_clock.advance(10.1)
+        qtbot.mousePress(window, Qt.MouseButton.LeftButton, pos=QPoint(5, 5))
+        qtbot.mouseRelease(window, Qt.MouseButton.LeftButton, pos=QPoint(5, 5))
+        assert events[-1].clicks_in_last_10s == 1
+
+    def test_right_click_publishes_reserved_event_without_dragging(self, rig, qtbot):
+        window, events = rig
+        qtbot.mousePress(window, Qt.MouseButton.RightButton, pos=QPoint(5, 5))
+        qtbot.mouseRelease(window, Qt.MouseButton.RightButton, pos=QPoint(5, 5))
+        assert [type(event).__name__ for event in events] == ["WillyClicked"]
+        assert events[0].button is MouseButton.RIGHT
+        assert not window.dragging
 
     def test_window_without_bus_still_drags(self, qtbot):
         window = WillyWindow(sprite())  # A-03 construction stays valid

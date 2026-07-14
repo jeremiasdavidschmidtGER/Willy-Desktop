@@ -1,30 +1,41 @@
-"""Transparent frameless Willy window (A-03 shell, A-07 dragging).
+"""Transparent frameless Willy window (A-03 shell, A-07 dragging, A-08 clicks).
 
 Dumb shell: it shows a pixmap, executes the window commands it is
-handed, and reports facts (`DragStarted`/`DragEnded`) — it never decides
-anything (platform publishes, core interprets; ARCHITECTURE §4). Never
-steals keyboard focus.
+handed, and reports facts (`DragStarted`/`DragEnded`/`WillyClicked`) — it
+never decides anything (platform publishes, core interprets; ARCHITECTURE
+§4). Never steals keyboard focus.
 """
 
 from __future__ import annotations
 
+from collections import deque
 from collections.abc import Callable
 
 from PySide6.QtCore import QPoint, Qt
 from PySide6.QtGui import QPainter, QPixmap
 from PySide6.QtWidgets import QWidget
 
-from willy.contracts import Clock, DragEnded, DragStarted, EventBus, ScreenPoint
+from willy.contracts import (
+    Clock,
+    DragEnded,
+    DragStarted,
+    EventBus,
+    MouseButton,
+    ScreenPoint,
+    WillyClicked,
+)
 
 DRAG_THRESHOLD_PX = 4  # press+move below this stays a click, not a drag
 GRAVITY_PX_S2 = 900.0  # D-15, tuned value from the retired lab
+CLICK_WINDOW_S = 10.0  # A-08: rolling window for WillyClicked.clicks_in_last_10s
 
 
 class WillyWindow(QWidget):
     """Per-pixel transparent, frameless, no taskbar entry, no focus theft.
 
-    Hit area is the sprite bounding box (pixel-perfect mask is an A-08
-    nicety). Sized to the sprite; resizes when the pixmap changes.
+    Hit area is the sprite bounding box (a pixel-perfect mask is a later
+    nicety, not a Gate A criterion). Sized to the sprite; resizes when the
+    pixmap changes.
     """
 
     def __init__(
@@ -44,6 +55,9 @@ class WillyWindow(QWidget):
         self._on_fall_started = on_fall_started
         self._press_global: QPoint | None = None
         self._grab_offset: QPoint | None = None
+        self._right_press_global: QPoint | None = None
+        self._left_click_times: deque[float] = deque()
+        self._right_click_times: deque[float] = deque()
         self._dragging = False
         self._falling = False
         self._fall_velocity = 0.0
@@ -56,6 +70,9 @@ class WillyWindow(QWidget):
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
+        # Right click is reserved (A-08): publishes WillyClicked only, no
+        # context menu in Gate A.
+        self.setContextMenuPolicy(Qt.ContextMenuPolicy.NoContextMenu)
         self.setFixedSize(self._pixmap.size())
 
     @property
@@ -161,6 +178,10 @@ class WillyWindow(QWidget):
             self._grab_offset = global_pos - self.pos()
             event.accept()
             return
+        if event.button() == Qt.MouseButton.RightButton:
+            self._right_press_global = event.globalPosition().toPoint()
+            event.accept()
+            return
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event) -> None:  # noqa: N802
@@ -189,9 +210,26 @@ class WillyWindow(QWidget):
             self._dragging = False
             if was_dragging:
                 self._begin_fall()  # DragEnded is published at impact (D-15)
+            else:
+                self._publish_click(MouseButton.LEFT)
+            event.accept()
+            return
+        if event.button() == Qt.MouseButton.RightButton and self._right_press_global is not None:
+            self._right_press_global = None
+            self._publish_click(MouseButton.RIGHT)  # reserved: no menu yet (Gate B)
             event.accept()
             return
         super().mouseReleaseEvent(event)
+
+    def _publish_click(self, button: MouseButton) -> None:
+        if self._clock is None:
+            return
+        times = self._left_click_times if button is MouseButton.LEFT else self._right_click_times
+        now = self._clock.monotonic()
+        times.append(now)
+        while times and now - times[0] > CLICK_WINDOW_S:
+            times.popleft()
+        self._publish(WillyClicked, button=button, clicks_in_last_10s=len(times))
 
     def _publish(self, event_type, **fields) -> None:
         if self._bus is None or self._clock is None:

@@ -110,3 +110,30 @@ of the drop (via the same "finished-handler play() wins over idle" seam
 A-06 already has — no controller change needed). A very short release near
 the floor lands instantly and skips the startle entirely, since there is
 nothing to interrupt.
+
+**D-17: Tier-1 click reaction is a front-facing turn, not `willy_surprised`.**
+(2026-07-14, user decision after live demo.) A real startle read as
+disproportionate for a single friendly click; live feedback wanted Willy to
+just turn and look at the user, "expecting interaction." The concept sheet's
+FRONT pose turned out to already be extracted and animated in the asset
+factory's raw pipeline output (`front/enter`, `idle`, `leave`) — it had just
+never been bridged/exported to Gate A. No new art generation was needed;
+`pixelpet/gate_export.py`'s `CLIPS` gained `willy_front_enter` (one-shot
+turn-to-camera), `willy_front_idle` (looping hold), and `willy_front_leave`
+(one-shot turn-back). `InteractionController` runs these as a small state
+machine (`_front_state`: none/entering/holding/leaving): tier 1 plays
+`enter`, then holds on `idle` for `FRONT_HOLD_SECONDS` (3.0s, first-pass
+tuning) driven by `TickElapsed`, then plays `leave` and returns to normal
+side-view idle. If annoyance escalates to tier 2/3 while still in the
+front-facing sequence, `leave` plays first and the side-view reaction
+(`willy_annoyed`/`willy_smug`) is queued to fire once `leave` finishes —
+avoiding a jump-cut straight from facing the camera to a side-view pose
+(second round of live feedback). `on_drag_started`/`on_fall_started` reset
+the front-sequence state, since a real drag (REACTION priority) always
+preempts it visually regardless. Known rough edge, not yet fixed: the
+`leave` clip's last frame stops at a 3/4 angle, while `willy_annoyed`/
+`willy_smug` start at a full side profile — a real angle/size mismatch,
+live-confirmed as "a bit rough." Queued as a new-art request:
+`Python-Test/codex_requests/willy_front_leave_smoothing.md`. Broader
+front/side transition polish logged as a lower-priority idea in
+`docs/IDEAS_BACKLOG.md`.
