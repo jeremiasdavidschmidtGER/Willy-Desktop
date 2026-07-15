@@ -8,9 +8,9 @@ Gate A criteria (MVP_SPEC §6.4), with evidence, using final art.
   `willy_fuming`/`willy_smug`/`willy_annoyed_idle` art landed)
 - **Report started:** 2026-07-15
 - **Overall result:** **PENDING** — 9/10 criteria have automated or
-  already-recorded manual evidence; criterion 1 needs a fresh real
-  4-hour run performed by the human (instructions below). No deviations
-  found so far.
+  already-recorded manual evidence; criterion 1's real 4-hour run is in
+  progress (started 2026-07-15 17:56, PID 25548, expected done ~21:56).
+  No deviations found so far.
 
 ## What ran (this pass)
 
@@ -20,8 +20,12 @@ Gate A criteria (MVP_SPEC §6.4), with evidence, using final art.
 - [x] `python -m tools.test_harness.profile_idle --seconds 20` — 1.64%
       idle CPU, 48.5 MB RSS, both PASS
 - [x] `python -m tools.test_harness.run_soak_test --minutes 5` —
-      supplementary real-Qt-loop check (not a substitute for the 4h run;
-      see criterion 1)
+      supplementary real-Qt-loop check: PASS, 10.5 MB RSS growth, 0
+      errors (not a substitute for the 4h run; see criterion 1)
+- [x] `python -m tools.test_harness.run_soak_test --minutes 240` —
+      **in progress**, started 2026-07-15 17:56 (PID 25548), running
+      detached in the background; result will be folded in below once
+      it completes
 - [ ] Fresh manual pass at this commit (focus theft, monitor
       recovery, tray look-and-feel) — recommended even though most of
       these were already live-tested in earlier sessions (see per-
@@ -106,8 +110,12 @@ anything new — flagged as a "nice to have" checkbox above, not blocking.
 ## 5-minute mini-soak result (this pass, supplementary)
 
 ```
-(filled in once the background run completes)
+soak run: 11 RSS samples, growth 10.5 MB, 0 error(s)
+PASS
 ```
+
+(Threshold: < 20 MB growth. Supplementary evidence only — not a
+substitute for criterion 1's 4-hour run, see below.)
 
 ## Deviations / failures
 
