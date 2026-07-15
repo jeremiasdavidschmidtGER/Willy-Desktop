@@ -1,0 +1,115 @@
+{
+  "asset_id": "willy_annoyed_idle",
+  "source_direction": "RIGHT",
+  "mirror_allowed": true,
+  "loop": true,
+  "priority": "AMBIENT",
+  "frames": [
+    {
+      "image": "willy_annoyed_idle_00.png",
+      "duration_ms": 67
+    },
+    {
+      "image": "willy_annoyed_idle_01.png",
+      "duration_ms": 67
+    },
+    {
+      "image": "willy_annoyed_idle_02.png",
+      "duration_ms": 67
+    },
+    {
+      "image": "willy_annoyed_idle_03.png",
+      "duration_ms": 67
+    },
+    {
+      "image": "willy_annoyed_idle_04.png",
+      "duration_ms": 67
+    },
+    {
+      "image": "willy_annoyed_idle_05.png",
+      "duration_ms": 67
+    },
+    {
+      "image": "willy_annoyed_idle_06.png",
+      "duration_ms": 67
+    },
+    {
+      "image": "willy_annoyed_idle_07.png",
+      "duration_ms": 67
+    },
+    {
+      "image": "willy_annoyed_idle_08.png",
+      "duration_ms": 67
+    },
+    {
+      "image": "willy_annoyed_idle_09.png",
+      "duration_ms": 67
+    },
+    {
+      "image": "willy_annoyed_idle_10.png",
+      "duration_ms": 67
+    },
+    {
+      "image": "willy_annoyed_idle_11.png",
+      "duration_ms": 67
+    },
+    {
+      "image": "willy_annoyed_idle_12.png",
+      "duration_ms": 67
+    },
+    {
+      "image": "willy_annoyed_idle_13.png",
+      "duration_ms": 67
+    },
+    {
+      "image": "willy_annoyed_idle_14.png",
+      "duration_ms": 67
+    },
+    {
+      "image": "willy_annoyed_idle_15.png",
+      "duration_ms": 67
+    },
+    {
+      "image": "willy_annoyed_idle_16.png",
+      "duration_ms": 67
+    },
+    {
+      "image": "willy_annoyed_idle_17.png",
+      "duration_ms": 67
+    },
+    {
+      "image": "willy_annoyed_idle_18.png",
+      "duration_ms": 67
+    },
+    {
+      "image": "willy_annoyed_idle_19.png",
+      "duration_ms": 67
+    },
+    {
+      "image": "willy_annoyed_idle_20.png",
+      "duration_ms": 67
+    },
+    {
+      "image": "willy_annoyed_idle_21.png",
+      "duration_ms": 67
+    },
+    {
+      "image": "willy_annoyed_idle_22.png",
+      "duration_ms": 67
+    },
+    {
+      "image": "willy_annoyed_idle_23.png",
+      "duration_ms": 67
+    }
+  ],
+  "anchors": {
+    "body_pivot": [
+      53,
+      83
+    ],
+    "ground": [
+      53,
+      114
+    ]
+  }
+}
