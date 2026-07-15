@@ -35,7 +35,22 @@ gate picks them up, not for Gate A.
   repeated drag/drop cycles in a short span would need their own tracked
   count (drag currently has no annoyance/frequency tracking at all). Art
   (`willy_fuming`, see above) now exists; the drag-frequency tracking and
-  wiring do not.
+  wiring do not. **Not the same idea as the dragging-animation expansion
+  below (D-18)** — this one is a post-drop reaction; D-18's "annoyed
+  dangle" is a mid-drag pose. They could eventually stack.
+
+## 2026-07-15 — dragging-animation expansion, scoped but not scheduled
+
+Follow-up to the `willy_dragged_by_cursor_rough.png` reference sheet flagged
+in the asset factory's `HANDOFF.md`. Scoping conversation held with the user
+2026-07-15 — full technical scope in `OPEN_DECISIONS.md` **D-18**. Summary:
+swing-motion dangle + annoyed dangle (anger-spark icon) are in scope as two
+new escalation tiers on the existing drag loop, triggered by combined
+hold-duration + swing-intensity (whichever crosses its threshold first);
+ground-resist/floor-drag is explicitly deferred pending its own scoping
+conversation. Scheduled for **after A-12** — no code or art yet. Pull this
+into a real backlog entry (Gate B backlog file doesn't exist yet) once it's
+actually next up.
 - ~~**Tier-1 click reaction is too strong.**~~ **Resolved:** swapped tier 1
   from `willy_surprised` to a new front-facing turn sequence
   (`willy_front_enter`/`idle`/`leave`). Turned out the concept sheet's

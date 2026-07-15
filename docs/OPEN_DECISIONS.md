@@ -141,3 +141,40 @@ genuine side profile; live-tested again, it made the transition read as
 `README.md`: a geometrically-correct bridge between two poses isn't the
 same as a *good* transition. Broader front/side transition polish stays
 logged as a lower-priority, unsolved idea in `docs/IDEAS_BACKLOG.md`.
+
+**D-18: Dragging-animation expansion — scope (not implementation).**
+(2026-07-15, user decision, scoping conversation only — no code or art
+generated yet.) `Reference Images/willy_dragged_by_cursor_rough.png` (asset
+factory) sketches 4 drag-pose variants: calm dangle (shipped, `willy_dragged`),
+swing-motion dangle with dust, annoyed dangle with an anger-spark icon, and a
+ground-resist/floor-drag pose. Scoped this round:
+- **In scope:** swing-motion dangle and annoyed dangle, as two new
+  escalation tiers layered onto the existing single-pose `willy_dragged`
+  loop (`src/willy/core/interaction.py`), mirroring A-08's
+  `REACTION_TIERS` pattern (tuple of ascending thresholds → asset id).
+- **Trigger:** combined signal — hold-duration (accumulated drag time,
+  tick-driven, same shape as A-08's per-tick decay) and swing-intensity
+  (cursor velocity while dragging) — whichever threshold is crossed first
+  escalates the tier. Swing-intensity is new contract surface: today
+  `WillyWindow` only publishes `DragStarted`/`DragEnded` as facts, not
+  per-move velocity, so this needs a new `Event` in
+  `src/willy/contracts/events.py` — contracts are read-only for
+  implementation agents, so this is a flagged escalation item for whoever
+  picks up the actual implementation task. Both signals reset on drag end
+  (session-only, no persistence, same spirit as D-9).
+- **Distinct from the existing unresolved `willy_fuming` idea** logged in
+  `IDEAS_BACKLOG.md` (2026-07-14): that idea reuses the standing
+  `willy_fuming` reaction pose as a *post-drop* escalation after repeated
+  drag/drop cycles. "Annoyed dangle" here is a different, new dangle-pose
+  asset (Willy keeps hanging, but with an anger-spark icon) triggered
+  *mid-drag*. The two could eventually stack (mid-drag escalation via
+  annoyed dangle, then a `willy_fuming` reaction on drop if still highly
+  agitated) but that combination is undecided.
+- **Explicitly out of scope this round:** the ground-resist/floor-drag
+  pose. Not just a new dangle frame — a different interaction paradigm
+  (dragged-along-the-floor vs. hanging-in-air), likely needing new
+  event/command shapes comparable in size to a full A-08-style feature.
+  Needs its own scoping conversation before any art brief.
+- **Timing:** scheduled for **after A-12** (Gate A acceptance run) — not
+  Gate A backlog work. No Gate B backlog file exists yet, so this stays
+  parked in `IDEAS_BACKLOG.md` until one does.
