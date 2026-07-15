@@ -9,7 +9,7 @@ or to record a clean run before a release/acceptance milestone.
 ## Summary
 
 - **Date:**
-- **Trigger:** (nightly mini-soak / manual profiling / A-12 acceptance run / bug report)
+- **Trigger:** (manual mini-soak run / manual profiling / A-12 acceptance run / bug report)
 - **Branch + commit:**
 - **Result:** PASS / FAIL
 

@@ -1,8 +1,8 @@
 """Smoke test for the real-time mini-soak CLI (A-11): proves the plumbing
 (real WillyApp under a real Qt event loop, synthetic-action timer, RSS
 sampling, exit-code reporting) works, using a tiny duration so it stays
-fast. The real 30-minute run is the nightly `mini-soak.yml` CI job, not
-part of the normal `pytest` suite.
+fast. The real 30-minute run is manual-only (see docs/testing/TESTING.md),
+not wired into CI at all.
 """
 
 from __future__ import annotations
