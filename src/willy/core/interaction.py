@@ -10,13 +10,16 @@ injected dispatch callable (the CommandRouter's).
 
 from __future__ import annotations
 
+import math
 from collections.abc import Callable, Sequence
+from datetime import datetime
 
 from willy.contracts import (
     AnimationFinished,
     AnimationPriority,
     Command,
     DragEnded,
+    DragMoved,
     DragStarted,
     Facing,
     MouseButton,
@@ -29,6 +32,21 @@ DRAGGED_ASSET_ID = "willy_dragged"
 STARTLE_ASSET_ID = "willy_surprised"
 LANDING_ASSET_ID = "willy_drop_landing"
 FACING_FLIP_THRESHOLD_PX = 2  # tiny horizontal drift keeps current facing
+
+# D-18: escalating drag tiers, same "hanging" pose family as DRAGGED_ASSET_ID
+# but reads as more agitated. Two independent signals — accumulated hold
+# duration and peak swing velocity — either one can push the tier up;
+# escalation is sticky for the rest of the drag (never steps back down
+# until DragEnded), mirroring how REACTION_TIERS never needs a decay step
+# mid-drag. Art doesn't exist yet as of D-18's scoping — see
+# OPEN_DECISIONS.md; release-mode asset fallback keeps this safe to merge
+# ahead of the art landing, but don't ship to users until it has.
+SWING_ASSET_ID = "willy_dragged_swing"
+ANNOYED_DRAG_ASSET_ID = "willy_dragged_annoyed"
+DRAG_TIER_ASSETS: tuple[str, ...] = (DRAGGED_ASSET_ID, SWING_ASSET_ID, ANNOYED_DRAG_ASSET_ID)
+# first-pass tuning; retune after live-watching, same as every other threshold here
+DRAG_HOLD_TIER_SECONDS: tuple[float, ...] = (3.0, 8.0)
+DRAG_VELOCITY_TIER_PX_S: tuple[float, ...] = (600.0, 1400.0)
 
 # A-08: the tier-1 click reaction is a three-stage front-facing sequence
 # (turn to face the camera, hold, turn back) rather than a flat one-shot
@@ -64,6 +82,12 @@ class InteractionController:
         self._facing = initial_facing
         self._is_falling = is_falling
         self._grab_x: int | None = None
+        self._drag_hold_seconds = 0.0
+        self._drag_max_velocity_px_s = 0.0
+        self._drag_tier_rank = 0
+        self._last_drag_x: int | None = None
+        self._last_drag_y: int | None = None
+        self._last_drag_timestamp: datetime | None = None
         self._reaction_tiers = tuple(sorted(reaction_tiers, key=lambda tier: tier[0]))
         self._annoyance_decay_per_second = annoyance_decay_per_second
         self._annoyance_cap = self._reaction_tiers[-1][0] * 2.0
@@ -84,7 +108,30 @@ class InteractionController:
     def on_drag_started(self, event: DragStarted) -> None:
         self._reset_front_sequence()
         self._grab_x = event.grab_point.x
+        self._drag_hold_seconds = 0.0
+        self._drag_max_velocity_px_s = 0.0
+        self._drag_tier_rank = 0
+        self._last_drag_x = event.grab_point.x
+        self._last_drag_y = event.grab_point.y
+        self._last_drag_timestamp = event.timestamp
         self._play(DRAGGED_ASSET_ID)
+
+    def on_drag_moved(self, event: DragMoved) -> None:
+        """D-18: swing-intensity signal — peak cursor speed since the drag
+        started. The platform sends a fact per real move; this derives
+        velocity from consecutive points/timestamps itself."""
+        if self._last_drag_timestamp is not None:
+            dt = (event.timestamp - self._last_drag_timestamp).total_seconds()
+            if dt > 0 and self._last_drag_x is not None and self._last_drag_y is not None:
+                distance = math.hypot(
+                    event.point.x - self._last_drag_x, event.point.y - self._last_drag_y
+                )
+                velocity = distance / dt
+                self._drag_max_velocity_px_s = max(self._drag_max_velocity_px_s, velocity)
+        self._last_drag_x = event.point.x
+        self._last_drag_y = event.point.y
+        self._last_drag_timestamp = event.timestamp
+        self._update_drag_tier()
 
     def on_fall_started(self) -> None:
         """Real gravity drop begins (D-15/D-16): startle once, then the
@@ -148,11 +195,15 @@ class InteractionController:
     def on_tick_elapsed(self, event: TickElapsed) -> None:
         """Decays annoyance over time — session-only (A-08): a click after
         a long-enough quiet period starts back at the lowest tier. Also
-        counts down how long the front-facing hold lasts."""
+        counts down how long the front-facing hold lasts, and (D-18)
+        accumulates how long the current drag has been held."""
         if self._front_state == "holding":
             self._front_hold_remaining -= event.dt_seconds
             if self._front_hold_remaining <= 0.0:
                 self._begin_front_leave()
+        if self._grab_x is not None:
+            self._drag_hold_seconds += event.dt_seconds
+            self._update_drag_tier()
         if self._annoyance <= 0.0:
             return
         self._annoyance = max(
@@ -165,6 +216,26 @@ class InteractionController:
             if self._annoyance >= threshold:
                 asset_id = tier_asset_id
         return asset_id
+
+    def _update_drag_tier(self) -> None:
+        """D-18: recompute the drag tier from both signals and, if it just
+        escalated, switch the dangle loop. Sticky for the rest of the
+        drag — never steps back down until DragEnded starts a fresh one."""
+        rank = max(
+            self._rank_for(self._drag_hold_seconds, DRAG_HOLD_TIER_SECONDS),
+            self._rank_for(self._drag_max_velocity_px_s, DRAG_VELOCITY_TIER_PX_S),
+        )
+        if rank > self._drag_tier_rank:
+            self._drag_tier_rank = rank
+            self._play(DRAG_TIER_ASSETS[rank])
+
+    @staticmethod
+    def _rank_for(value: float, thresholds: Sequence[float]) -> int:
+        rank = 0
+        for index, threshold in enumerate(thresholds, start=1):
+            if value >= threshold:
+                rank = index
+        return rank
 
     def _enter_or_refresh_front(self) -> None:
         if self._front_state in ("entering", "holding"):

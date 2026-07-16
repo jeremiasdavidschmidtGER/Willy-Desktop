@@ -10,7 +10,15 @@ from PySide6.QtGui import QPixmap
 
 from willy.app.bus import SyncEventBus
 from willy.app.wiring import WillyApp
-from willy.contracts import DragEnded, DragStarted, Facing, MouseButton, ScreenPoint, WillyClicked
+from willy.contracts import (
+    DragEnded,
+    DragMoved,
+    DragStarted,
+    Facing,
+    MouseButton,
+    ScreenPoint,
+    WillyClicked,
+)
 from willy.ui.window.willy_window import WillyWindow
 
 REPO_ASSETS = Path(__file__).parent.parent.parent / "assets" / "manifests"
@@ -56,6 +64,21 @@ class TestWindowDrag:
         assert window.y() == window.floor_y()
         assert events[1].drop_point.x == window.x()
         assert events[1].drop_point.y == window.floor_y()
+
+    def test_moves_during_drag_publish_drag_moved(self, qtbot, fake_clock):
+        """D-18: a DragMoved fact per real cursor move while dragging, for
+        InteractionController to derive swing-intensity from."""
+        bus = SyncEventBus()
+        events = []
+        bus.subscribe(DragMoved, events.append)
+        window = WillyWindow(sprite(), bus=bus, clock=fake_clock)
+        qtbot.addWidget(window)
+        window.show_without_activating()
+        qtbot.mousePress(window, Qt.MouseButton.LeftButton, pos=QPoint(5, 5))
+        qtbot.mouseMove(window, QPoint(45, 25))  # past the drag threshold
+        qtbot.mouseMove(window, QPoint(60, 30))
+        assert len(events) == 2
+        assert all(isinstance(event.point, ScreenPoint) for event in events)
 
     def test_click_without_move_is_not_a_drag(self, rig, qtbot):
         window, events = rig

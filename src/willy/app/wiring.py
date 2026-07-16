@@ -31,6 +31,7 @@ from willy.contracts import (
     AppStarted,
     Clock,
     DragEnded,
+    DragMoved,
     DragStarted,
     Facing,
     PlayAnimation,
@@ -156,6 +157,7 @@ class WillyApp:
                 on_fall_started=self.interaction.on_fall_started,
             )
             self.bus.subscribe(DragStarted, self.interaction.on_drag_started)
+            self.bus.subscribe(DragMoved, self.interaction.on_drag_moved)
             self.bus.subscribe(DragEnded, self.interaction.on_drag_ended)
             self.bus.subscribe(AnimationFinished, self.interaction.on_animation_finished)
             self.bus.subscribe(WillyClicked, self.interaction.on_willy_clicked)

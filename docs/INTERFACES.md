@@ -82,6 +82,13 @@ class DragStarted(Event):
     grab_point: ScreenPoint
 
 @dataclass(frozen=True, slots=True)
+class DragMoved(Event):
+    # D-18: one per real cursor move while dragging; InteractionController
+    # derives swing-intensity from consecutive points/timestamps itself —
+    # the platform layer stays dumb (same division as WillyClicked).
+    point: ScreenPoint
+
+@dataclass(frozen=True, slots=True)
 class DragEnded(Event):
     drop_point: ScreenPoint
 

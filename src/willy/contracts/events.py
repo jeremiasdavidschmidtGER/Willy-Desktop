@@ -42,6 +42,11 @@ class DragStarted(Event):
 
 
 @dataclass(frozen=True, slots=True)
+class DragMoved(Event):
+    point: ScreenPoint
+
+
+@dataclass(frozen=True, slots=True)
 class DragEnded(Event):
     drop_point: ScreenPoint
 
