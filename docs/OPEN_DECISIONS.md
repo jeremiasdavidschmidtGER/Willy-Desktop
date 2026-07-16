@@ -178,3 +178,44 @@ ground-resist/floor-drag pose. Scoped this round:
 - **Timing:** scheduled for **after A-12** (Gate A acceptance run) — not
   Gate A backlog work. No Gate B backlog file exists yet, so this stays
   parked in `IDEAS_BACKLOG.md` until one does.
+
+**D-19: D-18 implementation — the swing tier is horizontal-motion-only,
+not symmetric with the annoyed tier.** (2026-07-16, user decision after
+live-testing the art + code together, PR #19.) `DragMoved` landed in
+`src/willy/contracts/events.py` per D-18's escalation (approved before
+editing); `InteractionController` derives a swing-velocity signal from
+consecutive `DragMoved` points and a hold-duration signal from
+`TickElapsed` while dragging. Two live-test findings changed the
+original "combined signal, whichever crosses first" design from D-18:
+- **The swing pose's motion curve.** Codex's first cut doubled
+  `willy_dragged`'s rotate+dy amplitude ("energetic pendulum arc") —
+  live-tested as "wobbles too much." `willy_dragged_swing`'s art (a
+  stretched, gliding-looking pose) reads better swung left-right during
+  an actual drag than spinning/bobbing in place. Fixed in the asset
+  factory (`concept2pet/animate.py`): now a `dx`-driven horizontal
+  swing (±14px) with a small phase-locked `rotate` lean, `dy` back near
+  the base dangle's level.
+- **The trigger must match**, per the same live-test: "this pose must
+  be reserved for dragging from left to right only, ... can't be an
+  idle hold pose." A motionless hold reaching the old duration
+  threshold was escalating to `willy_dragged_swing` even with zero
+  cursor movement — visually nonsensical once the art specifically
+  depicts real horizontal motion. Fixed asymmetrically rather than
+  dropping hold-duration entirely: `willy_dragged_annoyed`'s art has no
+  implied motion (an angry static-ish dangle), so a long motionless
+  hold reading as "still stuck up here, getting annoyed" is fine — it
+  still escalates, but jumps straight to `ANNOYED_DRAG_ASSET_ID`,
+  skipping `SWING_ASSET_ID` entirely. `SWING_ASSET_ID` is now reachable
+  **only** via horizontal cursor velocity (`abs(dx)/dt`, not total
+  displacement — a fast *vertical* shake must not trigger it either).
+  `DRAG_HOLD_TIER_SECONDS` (a 2-tuple) became `DRAG_HOLD_ANNOYED_SECONDS`
+  (a single scalar); `DRAG_VELOCITY_TIER_PX_S` became
+  `DRAG_HORIZONTAL_VELOCITY_TIER_PX_S`.
+- Also worth knowing for future single-clip art iterations: a full
+  `pixelpet.gate_export` run rebuilds *every* tracked clip from its own
+  source frames, which can surface unrelated upstream drift (caught
+  `willy_dragged`'s canvas having silently grown 92→102px from some
+  earlier, unrelated change while fixing the swing clip — reverted,
+  not this task's concern). `pixelpet/gate_export.py` gained a
+  `--only <asset_id>` flag (mirroring `bridge.py`'s `--full-one`) so a
+  single-clip tuning pass doesn't force-touch everything else.

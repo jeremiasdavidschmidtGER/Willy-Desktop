@@ -10,7 +10,6 @@ injected dispatch callable (the CommandRouter's).
 
 from __future__ import annotations
 
-import math
 from collections.abc import Callable, Sequence
 from datetime import datetime
 
@@ -34,19 +33,23 @@ LANDING_ASSET_ID = "willy_drop_landing"
 FACING_FLIP_THRESHOLD_PX = 2  # tiny horizontal drift keeps current facing
 
 # D-18: escalating drag tiers, same "hanging" pose family as DRAGGED_ASSET_ID
-# but reads as more agitated. Two independent signals — accumulated hold
-# duration and peak swing velocity — either one can push the tier up;
-# escalation is sticky for the rest of the drag (never steps back down
-# until DragEnded), mirroring how REACTION_TIERS never needs a decay step
-# mid-drag. Art doesn't exist yet as of D-18's scoping — see
-# OPEN_DECISIONS.md; release-mode asset fallback keeps this safe to merge
-# ahead of the art landing, but don't ship to users until it has.
+# but reads as more agitated. Escalation is sticky for the rest of the drag
+# (never steps back down until DragEnded), mirroring how REACTION_TIERS
+# never needs a decay step mid-drag. Art landed 2026-07-16 (Python-Test
+# codex/drag-expansion) — see OPEN_DECISIONS.md.
+#
+# The two signals are NOT symmetric, by live-test design: SWING_ASSET_ID's
+# art depicts real left-right cursor motion (a wide horizontal pendulum
+# swing) — it must never fire from a motionless hold, only from actual
+# horizontal drag velocity. A long hold with no real swinging escalates
+# straight to ANNOYED instead (its art has no implied motion, so a static
+# "still stuck up here" read is fine). See DRAG_HOLD_ANNOYED_SECONDS below.
 SWING_ASSET_ID = "willy_dragged_swing"
 ANNOYED_DRAG_ASSET_ID = "willy_dragged_annoyed"
 DRAG_TIER_ASSETS: tuple[str, ...] = (DRAGGED_ASSET_ID, SWING_ASSET_ID, ANNOYED_DRAG_ASSET_ID)
 # first-pass tuning; retune after live-watching, same as every other threshold here
-DRAG_HOLD_TIER_SECONDS: tuple[float, ...] = (3.0, 8.0)
-DRAG_VELOCITY_TIER_PX_S: tuple[float, ...] = (600.0, 1400.0)
+DRAG_HOLD_ANNOYED_SECONDS = 8.0  # a long motionless hold jumps straight to ANNOYED, skipping SWING
+DRAG_HORIZONTAL_VELOCITY_TIER_PX_S: tuple[float, ...] = (600.0, 1400.0)
 
 # A-08: the tier-1 click reaction is a three-stage front-facing sequence
 # (turn to face the camera, hold, turn back) rather than a flat one-shot
@@ -83,10 +86,9 @@ class InteractionController:
         self._is_falling = is_falling
         self._grab_x: int | None = None
         self._drag_hold_seconds = 0.0
-        self._drag_max_velocity_px_s = 0.0
+        self._drag_max_horizontal_velocity_px_s = 0.0
         self._drag_tier_rank = 0
         self._last_drag_x: int | None = None
-        self._last_drag_y: int | None = None
         self._last_drag_timestamp: datetime | None = None
         self._reaction_tiers = tuple(sorted(reaction_tiers, key=lambda tier: tier[0]))
         self._annoyance_decay_per_second = annoyance_decay_per_second
@@ -109,27 +111,26 @@ class InteractionController:
         self._reset_front_sequence()
         self._grab_x = event.grab_point.x
         self._drag_hold_seconds = 0.0
-        self._drag_max_velocity_px_s = 0.0
+        self._drag_max_horizontal_velocity_px_s = 0.0
         self._drag_tier_rank = 0
         self._last_drag_x = event.grab_point.x
-        self._last_drag_y = event.grab_point.y
         self._last_drag_timestamp = event.timestamp
         self._play(DRAGGED_ASSET_ID)
 
     def on_drag_moved(self, event: DragMoved) -> None:
-        """D-18: swing-intensity signal — peak cursor speed since the drag
-        started. The platform sends a fact per real move; this derives
-        velocity from consecutive points/timestamps itself."""
+        """D-18: swing-intensity signal — peak *horizontal* cursor speed
+        since the drag started. Horizontal-only, not total displacement:
+        SWING_ASSET_ID's art is a left-right pendulum swing, so only real
+        left-right motion should be able to trigger it (live-test
+        2026-07-16 — see the module-level comment above the thresholds)."""
         if self._last_drag_timestamp is not None:
             dt = (event.timestamp - self._last_drag_timestamp).total_seconds()
-            if dt > 0 and self._last_drag_x is not None and self._last_drag_y is not None:
-                distance = math.hypot(
-                    event.point.x - self._last_drag_x, event.point.y - self._last_drag_y
+            if dt > 0 and self._last_drag_x is not None:
+                velocity = abs(event.point.x - self._last_drag_x) / dt
+                self._drag_max_horizontal_velocity_px_s = max(
+                    self._drag_max_horizontal_velocity_px_s, velocity
                 )
-                velocity = distance / dt
-                self._drag_max_velocity_px_s = max(self._drag_max_velocity_px_s, velocity)
         self._last_drag_x = event.point.x
-        self._last_drag_y = event.point.y
         self._last_drag_timestamp = event.timestamp
         self._update_drag_tier()
 
@@ -218,13 +219,19 @@ class InteractionController:
         return asset_id
 
     def _update_drag_tier(self) -> None:
-        """D-18: recompute the drag tier from both signals and, if it just
-        escalated, switch the dangle loop. Sticky for the rest of the
-        drag — never steps back down until DragEnded starts a fresh one."""
-        rank = max(
-            self._rank_for(self._drag_hold_seconds, DRAG_HOLD_TIER_SECONDS),
-            self._rank_for(self._drag_max_velocity_px_s, DRAG_VELOCITY_TIER_PX_S),
+        """D-18: recompute the drag tier and, if it just escalated, switch
+        the dangle loop. Sticky for the rest of the drag — never steps
+        back down until DragEnded starts a fresh one.
+
+        Asymmetric on purpose: a motionless hold can only ever reach
+        ANNOYED (rank 2), never SWING (rank 1) — SWING_ASSET_ID's art
+        depicts real left-right motion, so it may only be reached via
+        actual horizontal velocity."""
+        hold_rank = 2 if self._drag_hold_seconds >= DRAG_HOLD_ANNOYED_SECONDS else 0
+        velocity_rank = self._rank_for(
+            self._drag_max_horizontal_velocity_px_s, DRAG_HORIZONTAL_VELOCITY_TIER_PX_S
         )
+        rank = max(hold_rank, velocity_rank)
         if rank > self._drag_tier_rank:
             self._drag_tier_rank = rank
             self._play(DRAG_TIER_ASSETS[rank])

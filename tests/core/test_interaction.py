@@ -19,8 +19,8 @@ from willy.contracts import (
 from willy.core import InteractionController
 from willy.core.interaction import (
     ANNOYED_DRAG_ASSET_ID,
-    DRAG_HOLD_TIER_SECONDS,
-    DRAG_VELOCITY_TIER_PX_S,
+    DRAG_HOLD_ANNOYED_SECONDS,
+    DRAG_HORIZONTAL_VELOCITY_TIER_PX_S,
     FRONT_ENTER_ASSET_ID,
     FRONT_HOLD_SECONDS,
     FRONT_IDLE_ASSET_ID,
@@ -106,7 +106,7 @@ def test_drag_ended_without_started_still_lands_safely(rig):
     assert dirty == [True]
 
 
-# --- D-18: escalating drag tiers (swing-intensity + hold-duration) ---
+# --- D-18: escalating drag tiers (horizontal swing-intensity + hold-duration) ---
 
 
 def move(controller, x, y, at_seconds):
@@ -117,11 +117,11 @@ def move(controller, x, y, at_seconds):
     )
 
 
-def test_fast_swing_escalates_to_swing_tier(rig):
+def test_fast_horizontal_swing_escalates_to_swing_tier(rig):
     controller, commands, _ = rig
     controller.on_drag_started(DragStarted(timestamp=TS, grab_point=ScreenPoint(x=0, y=0)))
-    # A big jump in a small dt: velocity well above the swing threshold.
-    fast_px = DRAG_VELOCITY_TIER_PX_S[0] * 2
+    # A big horizontal jump in a small dt: velocity well above the swing threshold.
+    fast_px = DRAG_HORIZONTAL_VELOCITY_TIER_PX_S[0] * 2
     move(controller, x=fast_px, y=0, at_seconds=1.0)
     assert commands[-1].animation_id == SWING_ASSET_ID
 
@@ -133,17 +133,31 @@ def test_slow_moves_do_not_escalate(rig):
     assert commands[-1].animation_id == "willy_dragged"
 
 
-def test_long_hold_escalates_via_tick_without_movement(rig):
+def test_fast_vertical_only_movement_does_not_escalate_swing(rig):
+    """SWING_ASSET_ID's art is a left-right pendulum swing — a fast
+    *vertical* shake must not trigger it, only real horizontal motion
+    (live-test 2026-07-16)."""
     controller, commands, _ = rig
     controller.on_drag_started(DragStarted(timestamp=TS, grab_point=ScreenPoint(x=0, y=0)))
-    controller.on_tick_elapsed(TickElapsed(timestamp=TS, dt_seconds=DRAG_HOLD_TIER_SECONDS[0]))
-    assert commands[-1].animation_id == SWING_ASSET_ID
+    fast_px = DRAG_HORIZONTAL_VELOCITY_TIER_PX_S[0] * 2
+    move(controller, x=0, y=fast_px, at_seconds=1.0)  # same x, big y jump
+    assert commands[-1].animation_id == "willy_dragged"
 
 
-def test_very_fast_swing_escalates_straight_to_annoyed_tier(rig):
+def test_long_motionless_hold_escalates_straight_to_annoyed(rig):
+    """A hold alone can only ever reach ANNOYED, never SWING — SWING's art
+    depicts real dragging motion, so it must never fire from an idle
+    hold (live-test 2026-07-16)."""
     controller, commands, _ = rig
     controller.on_drag_started(DragStarted(timestamp=TS, grab_point=ScreenPoint(x=0, y=0)))
-    fast_px = DRAG_VELOCITY_TIER_PX_S[1] * 2
+    controller.on_tick_elapsed(TickElapsed(timestamp=TS, dt_seconds=DRAG_HOLD_ANNOYED_SECONDS))
+    assert commands[-1].animation_id == ANNOYED_DRAG_ASSET_ID
+
+
+def test_very_fast_horizontal_swing_escalates_straight_to_annoyed_tier(rig):
+    controller, commands, _ = rig
+    controller.on_drag_started(DragStarted(timestamp=TS, grab_point=ScreenPoint(x=0, y=0)))
+    fast_px = DRAG_HORIZONTAL_VELOCITY_TIER_PX_S[1] * 2
     move(controller, x=fast_px, y=0, at_seconds=1.0)
     assert commands[-1].animation_id == ANNOYED_DRAG_ASSET_ID
 
@@ -151,11 +165,11 @@ def test_very_fast_swing_escalates_straight_to_annoyed_tier(rig):
 def test_drag_tier_is_sticky_and_does_not_step_back_down(rig):
     controller, commands, _ = rig
     controller.on_drag_started(DragStarted(timestamp=TS, grab_point=ScreenPoint(x=0, y=0)))
-    move(controller, x=DRAG_VELOCITY_TIER_PX_S[0] * 2, y=0, at_seconds=1.0)
+    move(controller, x=DRAG_HORIZONTAL_VELOCITY_TIER_PX_S[0] * 2, y=0, at_seconds=1.0)
     assert commands[-1].animation_id == SWING_ASSET_ID
     # A subsequent slow, brief move must not un-escalate the tier or
     # re-dispatch the same clip.
-    move(controller, x=DRAG_VELOCITY_TIER_PX_S[0] * 2 + 1, y=0, at_seconds=1.5)
+    move(controller, x=DRAG_HORIZONTAL_VELOCITY_TIER_PX_S[0] * 2 + 1, y=0, at_seconds=1.5)
     assert commands[-1].animation_id == SWING_ASSET_ID
     assert len(commands) == 2  # start + the one escalation, no re-dispatch
 
@@ -163,7 +177,7 @@ def test_drag_tier_is_sticky_and_does_not_step_back_down(rig):
 def test_new_drag_resets_the_tier(rig):
     controller, commands, _ = rig
     controller.on_drag_started(DragStarted(timestamp=TS, grab_point=ScreenPoint(x=0, y=0)))
-    move(controller, x=DRAG_VELOCITY_TIER_PX_S[1] * 2, y=0, at_seconds=1.0)
+    move(controller, x=DRAG_HORIZONTAL_VELOCITY_TIER_PX_S[1] * 2, y=0, at_seconds=1.0)
     assert commands[-1].animation_id == ANNOYED_DRAG_ASSET_ID
     controller.on_drag_ended(DragEnded(timestamp=TS, drop_point=ScreenPoint(x=0, y=0)))
     controller.on_drag_started(DragStarted(timestamp=TS, grab_point=ScreenPoint(x=0, y=0)))
@@ -172,7 +186,7 @@ def test_new_drag_resets_the_tier(rig):
 
 def test_ticks_only_accumulate_hold_time_while_dragging(rig):
     controller, commands, _ = rig
-    controller.on_tick_elapsed(TickElapsed(timestamp=TS, dt_seconds=DRAG_HOLD_TIER_SECONDS[1]))
+    controller.on_tick_elapsed(TickElapsed(timestamp=TS, dt_seconds=DRAG_HOLD_ANNOYED_SECONDS))
     assert commands == []  # not dragging: no drag-tier state to escalate
 
 
@@ -384,11 +398,10 @@ def test_drag_started_resets_front_sequence(rig):
     controller.on_drag_started(DragStarted(timestamp=TS, grab_point=ScreenPoint(x=10, y=20)))
     assert commands[-1].animation_id == "willy_dragged"
     # A tick that would have expired the (now-abandoned) hold must not
-    # spuriously play the turn-away clip on top of the drag. (It's fine,
-    # and expected per D-18, for a long enough tick to escalate the drag
-    # tier instead — that's a real hold-duration signal, not a bug.)
+    # spuriously play the turn-away clip on top of the drag. Also below
+    # DRAG_HOLD_ANNOYED_SECONDS, so no D-18 drag-tier escalation either.
     tick(controller, FRONT_HOLD_SECONDS + 0.1)
-    assert commands[-1].animation_id != FRONT_LEAVE_ASSET_ID
+    assert commands[-1].animation_id == "willy_dragged"
 
 
 def test_fall_started_resets_front_sequence(rig):
