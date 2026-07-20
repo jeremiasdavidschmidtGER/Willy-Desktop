@@ -319,3 +319,8 @@ original "combined signal, whichever crosses first" design from D-18:
   *previous* tick — detection lands within one full silent tick
   (up to ~2 ticks worst case after the last real movement), the
   fastest achievable with only the existing ~1 Hz heartbeat.
+- **Round five: `DRAG_SWING_VELOCITY_PX_S` raised 600 → 1100** (same
+  session) — 600 triggered SWING during fairly ordinary dragging; it's
+  meant to be reserved for genuinely fast/rapid cursor movement, with
+  plain `DRAGGED_ASSET_ID` as the default the rest of the time.
+  First-pass tuning, same as every other threshold here.
