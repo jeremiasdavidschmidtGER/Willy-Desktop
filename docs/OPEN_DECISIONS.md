@@ -245,3 +245,21 @@ original "combined signal, whichever crosses first" design from D-18:
   signal — still sticky, still never steps back down mid-drag, but now
   needs sustained fast swinging rather than one noisy sample to
   escalate.
+- **Same session, two more findings from watching real dragging.**
+  (1) `SWING_ASSET_ID` stayed stuck facing one direction regardless of
+  which way the drag actually went — `self._facing` was only ever set
+  in `on_drag_ended`, never live during the drag, so a directional pose
+  had nothing to follow. Fixed by updating facing from `DragMoved` too,
+  with a hysteresis band (`FACING_DRAG_FLIP_THRESHOLD_PX = 20`, much
+  wider than the drop-time `FACING_FLIP_THRESHOLD_PX = 2`) so a real
+  swing's own oscillation doesn't flicker it every sample; re-dispatches
+  the active tier's clip on a flip so the pose actually shows the right
+  direction. (2) The EMA fix above wasn't enough on its own — sustained
+  fast velocity (not a single noisy sample) still reached
+  `ANNOYED_DRAG_ASSET_ID` almost immediately during a real swing, since
+  the EMA converges in a handful of samples. Rather than re-tuning
+  thresholds a third time, removed the velocity→annoyed path entirely:
+  velocity now only ever reaches `SWING_ASSET_ID`, hold-duration is the
+  only path to `ANNOYED_DRAG_ASSET_ID` (already confirmed working well
+  on its own). Each tier now has exactly one way in — no more shared
+  thresholds to keep in balance against each other.
