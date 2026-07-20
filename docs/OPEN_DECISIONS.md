@@ -219,3 +219,29 @@ original "combined signal, whichever crosses first" design from D-18:
   not this task's concern). `pixelpet/gate_export.py` gained a
   `--only <asset_id>` flag (mirroring `bridge.py`'s `--full-one`) so a
   single-clip tuning pass doesn't force-touch everything else.
+- **`willy_dragged_annoyed` needed facial movement, not just a static
+  angry pose** (live-test 2026-07-16, same PR). Two eye-blinks (frames
+  2-3 and 9-10 of the 16-frame loop) are baked in via a new
+  `close_largest_light_blob` helper in the factory's
+  `pixelpet/gate_export.py` — broader than the existing
+  `detect_eye_rect` (which only exact-matches a single palette color
+  and missed this pose's two-tone eye rendering, catching the tusk
+  instead once widened naively). Leg movement was also requested but
+  never produced a convincing result — tried locally (pixel-region
+  offset leaves visible seams at a load-bearing joint, unlike an eye's
+  small self-contained blob) and handed to Codex (two more approaches,
+  neither survived review) — recorded as failure #26 in the asset
+  factory's `README.md`. Shipping without leg movement; the pose still
+  reads as annoyed via face + blinks.
+- **The velocity signal itself was too noisy** (live-test 2026-07-20,
+  after the art landed in PR #19): raw per-`DragMoved` instantaneous
+  velocity, tracked as a running max, let a single sample spike the
+  tier straight to `ANNOYED_DRAG_ASSET_ID` — two events firing a few ms
+  apart with an ordinary small cursor jump computes to an unrealistic
+  px/s reading from the tiny `dt` alone. `SWING_ASSET_ID` read as
+  "hard to trigger" because it was almost always skipped entirely.
+  Fixed by replacing the raw max with an EMA (`DRAG_VELOCITY_EMA_ALPHA`,
+  `InteractionController`), then tracking the peak of the *smoothed*
+  signal — still sticky, still never steps back down mid-drag, but now
+  needs sustained fast swinging rather than one noisy sample to
+  escalate.
