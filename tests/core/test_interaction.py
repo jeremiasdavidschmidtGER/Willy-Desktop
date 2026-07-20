@@ -203,20 +203,34 @@ def test_no_amount_of_velocity_reaches_annoyed(rig):
     assert ANNOYED_DRAG_ASSET_ID not in [c.animation_id for c in commands]
 
 
-def test_drag_tier_is_sticky_and_does_not_step_back_down(rig):
+def test_swing_reverts_to_calm_once_a_tick_passes_with_no_movement(rig):
+    """D-19 reversal: SWING is deliberately NOT sticky — it must end once
+    the cursor genuinely stops, not linger for the rest of the drag. No
+    DragMoved fires while stationary, so "stopped" can only be detected
+    on a tick with no movement since the *previous* tick — the very next
+    tick after a burst of movement still correctly sees that movement as
+    recent and doesn't clear yet; the one after *that*, with a fully
+    silent interval, does."""
     controller, commands, _ = rig
     controller.on_drag_started(DragStarted(timestamp=TS, grab_point=ScreenPoint(x=0, y=0)))
-    reached_x = sustained_horizontal_move(controller, DRAG_SWING_VELOCITY_PX_S * 1.5)
+    sustained_horizontal_move(controller, DRAG_SWING_VELOCITY_PX_S * 1.5)
     assert commands[-1].animation_id == SWING_ASSET_ID
-    dispatch_count = len(commands)
-    # A subsequent slow move must not un-escalate the tier or re-dispatch
-    # the same clip, even though the EMA itself will start decaying back
-    # down — the tier tracks the *peak* smoothed value, not the current one.
-    # Stay within the facing hysteresis band so this doesn't also trigger
-    # a (legitimate) facing-flip redispatch.
-    move(controller, x=reached_x - (FACING_DRAG_FLIP_THRESHOLD_PX - 1), y=0, at_seconds=10.0)
-    assert commands[-1].animation_id == SWING_ASSET_ID
-    assert len(commands) == dispatch_count  # no re-dispatch
+    controller.on_tick_elapsed(TickElapsed(timestamp=TS, dt_seconds=1.0))
+    assert commands[-1].animation_id == SWING_ASSET_ID  # still recent, doesn't clear yet
+    controller.on_tick_elapsed(TickElapsed(timestamp=TS, dt_seconds=1.0))  # a full silent tick
+    assert commands[-1].animation_id == "willy_dragged"
+
+
+def test_annoyed_is_a_ceiling_a_fast_swing_cannot_undo(rig):
+    """Unlike SWING, ANNOYED is still sticky for the rest of the drag —
+    once DRAG_HOLD_ANNOYED_SECONDS of total drag time has passed, even
+    an energetic swing afterward must not drop back to SWING."""
+    controller, commands, _ = rig
+    controller.on_drag_started(DragStarted(timestamp=TS, grab_point=ScreenPoint(x=0, y=0)))
+    controller.on_tick_elapsed(TickElapsed(timestamp=TS, dt_seconds=DRAG_HOLD_ANNOYED_SECONDS))
+    assert commands[-1].animation_id == ANNOYED_DRAG_ASSET_ID
+    sustained_horizontal_move(controller, DRAG_SWING_VELOCITY_PX_S * 1.5, start_at=20.0)
+    assert commands[-1].animation_id == ANNOYED_DRAG_ASSET_ID  # unchanged, no step back to SWING
 
 
 def test_new_drag_resets_the_tier(rig):
@@ -300,43 +314,29 @@ def test_fall_started_plays_startle_pose(rig):
     assert commands[-1].priority is AnimationPriority.REACTION
 
 
+def test_fall_started_loops_the_chosen_reaction_for_the_whole_fall(rig):
+    """D-19: a fall reaction used to play once and then hand off to
+    DRAGGED_ASSET_ID if the fall was still going — live-tested as
+    randomly switching poses partway down, especially once FALL_ASSET_ID
+    (much shorter than STARTLE_ASSET_ID) was added. It now loops for as
+    long as the fall lasts; only DragEnded's landing pose interrupts it."""
+    controller, commands, _ = rig
+    controller.on_fall_started()
+    assert commands[-1].loop_override is True
+    # A finished event for it (however that's driven upstream) must not
+    # hand off to DRAGGED_ASSET_ID anymore — there's nothing listening
+    # for it at all now.
+    controller.on_animation_finished(
+        AnimationFinished(timestamp=TS, animation_id="willy_surprised")
+    )
+    assert len(commands) == 1  # no extra dispatch
+
+
 def test_fall_started_uses_current_facing(rig):
     controller, commands, _ = rig
     drag(controller, grab_x=100, drop_x=40)  # flips to LEFT
     controller.on_fall_started()
     assert commands[-1].facing is Facing.LEFT
-
-
-def test_startle_finished_while_still_falling_resumes_dragged():
-    commands = []
-    controller = InteractionController(
-        dispatch=commands.append,
-        state_dirty=lambda: None,
-        is_falling=lambda: True,
-        random_choice=lambda choices: STARTLE_ASSET_ID,
-    )
-    controller.on_fall_started()
-    controller.on_animation_finished(
-        AnimationFinished(timestamp=TS, animation_id="willy_surprised")
-    )
-    assert [command.animation_id for command in commands] == ["willy_surprised", "willy_dragged"]
-
-
-def test_startle_finished_after_landing_does_not_resume_dragged():
-    commands = []
-    controller = InteractionController(
-        dispatch=commands.append,
-        state_dirty=lambda: None,
-        is_falling=lambda: False,
-        random_choice=lambda choices: STARTLE_ASSET_ID,
-    )
-    controller.on_fall_started()
-    controller.on_animation_finished(
-        AnimationFinished(timestamp=TS, animation_id="willy_surprised")
-    )
-    assert [command.animation_id for command in commands] == [
-        "willy_surprised"
-    ]  # no extra dispatch
 
 
 def test_fall_reaction_is_chosen_from_both_options():
@@ -356,21 +356,6 @@ def test_fall_reaction_is_chosen_from_both_options():
     controller.on_fall_started()
     assert offered == [FALL_START_REACTIONS]
     assert commands[-1].animation_id == FALL_ASSET_ID
-
-
-def test_fall_reaction_finished_while_still_falling_resumes_dragged():
-    """Whichever of the two fall reactions was actually picked must be
-    the one checked on completion, not a hardcoded STARTLE_ASSET_ID."""
-    commands = []
-    controller = InteractionController(
-        dispatch=commands.append,
-        state_dirty=lambda: None,
-        is_falling=lambda: True,
-        random_choice=lambda choices: FALL_ASSET_ID,
-    )
-    controller.on_fall_started()
-    controller.on_animation_finished(AnimationFinished(timestamp=TS, animation_id=FALL_ASSET_ID))
-    assert [command.animation_id for command in commands] == [FALL_ASSET_ID, "willy_dragged"]
 
 
 def test_unrelated_animation_finished_is_ignored(rig):

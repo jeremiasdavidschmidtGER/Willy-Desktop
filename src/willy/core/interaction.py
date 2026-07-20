@@ -55,26 +55,24 @@ FACING_FLIP_THRESHOLD_PX = 2  # tiny horizontal drift keeps current facing (at d
 FACING_DRAG_FLIP_THRESHOLD_PX = 20
 
 # D-18: escalating drag tiers, same "hanging" pose family as DRAGGED_ASSET_ID
-# but reads as more agitated. Escalation is sticky for the rest of the drag
-# (never steps back down until DragEnded), mirroring how REACTION_TIERS
-# never needs a decay step mid-drag. Art landed 2026-07-16 (Python-Test
+# but reads as more agitated. Art landed 2026-07-16 (Python-Test
 # codex/drag-expansion) — see OPEN_DECISIONS.md.
 #
-# The two signals are fully asymmetric, by live-test design: velocity can
-# only ever reach SWING, never ANNOYED — SWING_ASSET_ID's art depicts real
-# left-right cursor motion, so a fast swing should show the swing pose,
-# not skip past it. ANNOYED is reached only via a long motionless hold
-# (its art has no implied motion, so "still stuck up here" reads fine
-# static). Live-test 2026-07-20: an earlier version let sustained fast
-# velocity also reach ANNOYED, which converged there almost immediately
-# during a real swing (the EMA ramps up in just a handful of samples) —
-# removed rather than re-tuned, since hold-duration already covers
-# ANNOYED well and gave the two tiers a clean, predictable split.
+# Only ANNOYED is sticky for the rest of the drag (never steps back down
+# until DragEnded) — it's reached via DRAG_HOLD_ANNOYED_SECONDS of *total*
+# time spent dragging, whether that's a long motionless hold or a long
+# bout of active swinging (both just accumulate the same clock; see
+# on_tick_elapsed), so once Willy's genuinely fed up he stays that way.
+# SWING is deliberately NOT sticky (live-test 2026-07-20, reversing the
+# original design): it tracks *current* swing velocity and reverts to
+# DRAGGED_ASSET_ID the moment real motion stops, rather than staying
+# locked in once reached — a quick swing that stops should just go back
+# to hanging calmly, not linger in the swing pose.
 SWING_ASSET_ID = "willy_dragged_swing"
 ANNOYED_DRAG_ASSET_ID = "willy_dragged_annoyed"
 DRAG_TIER_ASSETS: tuple[str, ...] = (DRAGGED_ASSET_ID, SWING_ASSET_ID, ANNOYED_DRAG_ASSET_ID)
 # first-pass tuning; retune after live-watching, same as every other threshold here
-DRAG_HOLD_ANNOYED_SECONDS = 8.0  # a long motionless hold jumps straight to ANNOYED, skipping SWING
+DRAG_HOLD_ANNOYED_SECONDS = 8.0  # total time dragging (held still or swung) before ANNOYED
 DRAG_SWING_VELOCITY_PX_S = 600.0
 # Raw per-event instantaneous velocity was too noisy to use directly — two
 # DragMoved events a couple ms apart (a perfectly normal small jump at
@@ -114,7 +112,6 @@ class InteractionController:
         dispatch: Callable[[Command], None],
         state_dirty: Callable[[], None],
         initial_facing: Facing = Facing.RIGHT,
-        is_falling: Callable[[], bool] = lambda: False,
         reaction_tiers: Sequence[tuple[int, str]] = REACTION_TIERS,
         annoyance_decay_per_second: float = ANNOYANCE_DECAY_PER_SECOND,
         random_choice: Callable[[Sequence[str]], str] = random.choice,
@@ -122,13 +119,12 @@ class InteractionController:
         self._dispatch = dispatch
         self._state_dirty = state_dirty
         self._facing = initial_facing
-        self._is_falling = is_falling
         self._random_choice = random_choice
         self._current_fall_reaction: str | None = None
         self._grab_x: int | None = None
         self._drag_hold_seconds = 0.0
         self._drag_velocity_ema_px_s = 0.0
-        self._drag_peak_smoothed_velocity_px_s = 0.0
+        self._drag_moved_since_last_tick = False
         self._drag_tier_rank = 0
         self._last_drag_x: int | None = None
         self._last_drag_timestamp: datetime | None = None
@@ -155,7 +151,7 @@ class InteractionController:
         self._grab_x = event.grab_point.x
         self._drag_hold_seconds = 0.0
         self._drag_velocity_ema_px_s = 0.0
-        self._drag_peak_smoothed_velocity_px_s = 0.0
+        self._drag_moved_since_last_tick = False
         self._drag_tier_rank = 0
         self._last_drag_x = event.grab_point.x
         self._last_drag_timestamp = event.timestamp
@@ -163,18 +159,19 @@ class InteractionController:
         self._play(DRAGGED_ASSET_ID)
 
     def on_drag_moved(self, event: DragMoved) -> None:
-        """D-18: swing-intensity signal — peak *horizontal* cursor speed
-        since the drag started. Horizontal-only, not total displacement:
+        """D-18: swing-intensity signal — *current* horizontal cursor speed
+        (D-19: no longer a sticky peak, see the module-level comment on
+        SWING_ASSET_ID). Horizontal-only, not total displacement:
         SWING_ASSET_ID's art is a left-right pendulum swing, so only real
         left-right motion should be able to trigger it (live-test
-        2026-07-16 — see the module-level comment above the thresholds).
-        The raw per-event speed is smoothed via an EMA before feeding the
-        tier thresholds — see DRAG_VELOCITY_EMA_ALPHA (live-test
-        2026-07-20: an unsmoothed single-sample spike made SWING nearly
-        unreachable). Also updates facing live (tracked against a
-        trailing extremum with hysteresis, see
+        2026-07-16). The raw per-event speed is smoothed via an EMA
+        before feeding the tier threshold — see DRAG_VELOCITY_EMA_ALPHA
+        (live-test 2026-07-20: an unsmoothed single-sample spike made
+        SWING nearly unreachable). Also updates facing live (tracked
+        against a trailing extremum with hysteresis, see
         FACING_DRAG_FLIP_THRESHOLD_PX) rather than only at drop, so a
         directional pose actually follows the current swing direction."""
+        self._drag_moved_since_last_tick = True
         if self._facing_extreme_x is not None:
             if self._facing is Facing.RIGHT:
                 self._facing_extreme_x = max(self._facing_extreme_x, event.point.x)
@@ -197,9 +194,6 @@ class InteractionController:
                     DRAG_VELOCITY_EMA_ALPHA * instantaneous
                     + (1 - DRAG_VELOCITY_EMA_ALPHA) * self._drag_velocity_ema_px_s
                 )
-                self._drag_peak_smoothed_velocity_px_s = max(
-                    self._drag_peak_smoothed_velocity_px_s, self._drag_velocity_ema_px_s
-                )
                 # Only advance the reference once it's actually been used —
                 # otherwise a burst of sub-threshold-dt events would keep
                 # resetting it and never accumulate enough real time.
@@ -209,18 +203,19 @@ class InteractionController:
 
     def on_fall_started(self) -> None:
         """Real gravity drop begins (D-15/D-16): one of FALL_START_REACTIONS
-        once (D-19: picked at random each time), then the dangle loop
-        resumes for the rest of the fall via on_animation_finished."""
+        (D-19: picked at random each time), looped for the rest of the
+        fall — live-test 2026-07-20: playing it once and then reverting
+        to DRAGGED_ASSET_ID mid-air (the original D-16 behaviour) read as
+        randomly switching poses partway down, especially with
+        FALL_ASSET_ID's much shorter runtime than STARTLE_ASSET_ID's.
+        Ends only at DragEnded, which plays LANDING_ASSET_ID regardless
+        of what's currently looping."""
         self._reset_front_sequence()
         self._current_fall_reaction = self._random_choice(FALL_START_REACTIONS)
-        self._play(self._current_fall_reaction)
+        self._play(self._current_fall_reaction, loop_override=True)
 
     def on_animation_finished(self, event: AnimationFinished) -> None:
-        if event.animation_id == self._current_fall_reaction and self._is_falling():
-            # Still airborne: resume dangling instead of A-06's idle
-            # default (dispatched here, it wins over idle — see A-06).
-            self._play(DRAGGED_ASSET_ID)
-        elif event.animation_id == FRONT_ENTER_ASSET_ID and self._front_state == "entering":
+        if event.animation_id == FRONT_ENTER_ASSET_ID and self._front_state == "entering":
             self._front_state = "holding"
             self._front_hold_remaining = FRONT_HOLD_SECONDS
             self._play(
@@ -271,13 +266,26 @@ class InteractionController:
         """Decays annoyance over time — session-only (A-08): a click after
         a long-enough quiet period starts back at the lowest tier. Also
         counts down how long the front-facing hold lasts, and (D-18)
-        accumulates how long the current drag has been held."""
+        accumulates how long the current drag has been held.
+
+        D-19: also the only place SWING's velocity signal can go back
+        down. No DragMoved fires while the cursor is genuinely
+        stationary, so on_drag_moved alone can never detect "stopped" —
+        if a tick sees no movement since the *previous* tick, the
+        velocity reading is cleared outright (live-test wanted SWING to
+        end "immediately" once motion stops; with only a ~1 Hz heartbeat
+        to check on, detection lands within one full silent tick, i.e.
+        up to ~2 ticks after the last real movement in the worst case —
+        as fast as this mechanism can go)."""
         if self._front_state == "holding":
             self._front_hold_remaining -= event.dt_seconds
             if self._front_hold_remaining <= 0.0:
                 self._begin_front_leave()
         if self._grab_x is not None:
             self._drag_hold_seconds += event.dt_seconds
+            if not self._drag_moved_since_last_tick:
+                self._drag_velocity_ema_px_s = 0.0
+            self._drag_moved_since_last_tick = False
             self._update_drag_tier()
         if self._annoyance <= 0.0:
             return
@@ -293,20 +301,18 @@ class InteractionController:
         return asset_id
 
     def _update_drag_tier(self) -> None:
-        """D-18: recompute the drag tier and, if it just escalated, switch
-        the dangle loop. Sticky for the rest of the drag — never steps
-        back down until DragEnded starts a fresh one.
-
-        Fully asymmetric on purpose (live-test 2026-07-20): a motionless
-        hold can only ever reach ANNOYED (rank 2), never SWING (rank 1);
-        velocity can only ever reach SWING, never ANNOYED. Each tier has
-        exactly one way in."""
-        hold_rank = 2 if self._drag_hold_seconds >= DRAG_HOLD_ANNOYED_SECONDS else 0
-        velocity_rank = (
-            1 if self._drag_peak_smoothed_velocity_px_s >= DRAG_SWING_VELOCITY_PX_S else 0
-        )
-        rank = max(hold_rank, velocity_rank)
-        if rank > self._drag_tier_rank:
+        """D-18/D-19: recompute the drag tier and switch the dangle loop
+        if it changed. ANNOYED (rank 2) is a ceiling — once
+        DRAG_HOLD_ANNOYED_SECONDS of total drag time has passed, it's
+        sticky for the rest of the drag. Below that ceiling, SWING
+        (rank 1) vs. DRAGGED (rank 0) is fully reactive to *current*
+        velocity — it can step back down as freely as it steps up,
+        by design (live-test 2026-07-20)."""
+        if self._drag_hold_seconds >= DRAG_HOLD_ANNOYED_SECONDS:
+            rank = 2
+        else:
+            rank = 1 if self._drag_velocity_ema_px_s >= DRAG_SWING_VELOCITY_PX_S else 0
+        if rank != self._drag_tier_rank:
             self._drag_tier_rank = rank
             self._play(DRAG_TIER_ASSETS[rank])
 

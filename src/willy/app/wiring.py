@@ -148,7 +148,6 @@ class WillyApp:
                 dispatch=self.router.dispatch,
                 state_dirty=self._mark_state_dirty,
                 initial_facing=initial_facing,
-                is_falling=lambda: self.window.falling,
             )
             self.window = WillyWindow(
                 self._last_pixmap,
