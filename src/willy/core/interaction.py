@@ -73,7 +73,10 @@ ANNOYED_DRAG_ASSET_ID = "willy_dragged_annoyed"
 DRAG_TIER_ASSETS: tuple[str, ...] = (DRAGGED_ASSET_ID, SWING_ASSET_ID, ANNOYED_DRAG_ASSET_ID)
 # first-pass tuning; retune after live-watching, same as every other threshold here
 DRAG_HOLD_ANNOYED_SECONDS = 8.0  # total time dragging (held still or swung) before ANNOYED
-DRAG_SWING_VELOCITY_PX_S = 600.0
+# Live-test 2026-07-20: 600 triggered SWING too easily during ordinary
+# dragging — it's meant to be reserved for genuinely fast/rapid cursor
+# movement, with plain DRAGGED_ASSET_ID as the default the rest of the time.
+DRAG_SWING_VELOCITY_PX_S = 1100.0
 # Raw per-event instantaneous velocity was too noisy to use directly — two
 # DragMoved events a couple ms apart (a perfectly normal small jump at
 # real mouse-report rates) could spike to an unrealistic px/s reading
