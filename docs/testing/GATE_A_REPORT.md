@@ -116,5 +116,5 @@ None found.
 ## Sign-off
 
 - [x] All 10 criteria green with evidence
-- [ ] Human sign-off: _____________________ (name, date)
-- [ ] `main` tagged `gate-a`
+- [x] Human sign-off: Jeremias Schmidt, 2026-07-20
+- [x] `main` tagged `gate-a`
