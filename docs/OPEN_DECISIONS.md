@@ -295,3 +295,27 @@ original "combined signal, whichever crosses first" design from D-18:
   deterministic in tests) — the same "each tier/reaction has exactly
   one clear trigger" spirit as the earlier fixes, just applied to
   variety instead of escalation.
+- **Same session, round four: the fall reaction switched poses mid-air,
+  and SWING needed to be reactive after all.** (1) A fall reaction
+  played once and handed off to `willy_dragged` if the fall was still
+  going when it finished (the original D-16 behaviour) — with
+  `willy_fall`'s much shorter runtime than `willy_surprised`'s, this
+  read as randomly switching poses partway down. Now plays with
+  `loop_override=True` and loops for the entire fall; only
+  `DragEnded`'s landing pose interrupts it. The now-dead `is_falling`
+  callback (`InteractionController`, `wiring.py`) was removed entirely
+  since nothing checks it anymore. (2) Reversing the "SWING is fully
+  asymmetric/never reached via a motionless hold" decision from round
+  two: it turns out SWING shouldn't be sticky at all — it's now
+  reactive to *current* swing velocity and ends as soon as the cursor
+  genuinely stops, rather than staying locked in once reached.
+  `ANNOYED_DRAG_ASSET_ID` stays a sticky ceiling, reached via
+  `DRAG_HOLD_ANNOYED_SECONDS` of *total* drag time (held still or
+  swung — that timer runs regardless of motion, so it already covers
+  "swung too long" and "held too long" as the same clock, without
+  needing two separate mechanisms). Since no `DragMoved` fires while
+  the cursor is genuinely stationary, `on_tick_elapsed` now clears the
+  velocity EMA whenever a full tick passes with no movement since the
+  *previous* tick — detection lands within one full silent tick
+  (up to ~2 ticks worst case after the last real movement), the
+  fastest achievable with only the existing ~1 Hz heartbeat.
