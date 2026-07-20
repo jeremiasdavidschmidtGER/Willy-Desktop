@@ -282,3 +282,16 @@ original "combined signal, whichever crosses first" design from D-18:
   actually used for a computation (not on every call) — otherwise a
   burst of too-close-together events would keep resetting it and never
   accumulate enough real time to produce a valid reading.
+- **`willy_fall` added alongside `willy_surprised` at fall start**
+  (2026-07-20, user request after live-testing the fixes above). The
+  asset factory's `make_drag.py` had built a `drag/fall` clip (panicked
+  wobble, from `Reference Images/generated/willy_falling_0.png`) since
+  the drag set was first authored, but it was never bridged to Gate A —
+  same situation D-17 found with the front-facing pose. No new
+  generation needed; added a `CLIPS` entry and exported. Rather than
+  replacing `willy_surprised`, `InteractionController.on_fall_started`
+  now picks randomly between the two (`FALL_START_REACTIONS`) via an
+  injected `random_choice` callable (`random.choice` by default,
+  deterministic in tests) — the same "each tier/reaction has exactly
+  one clear trigger" spirit as the earlier fixes, just applied to
+  variety instead of escalation.
