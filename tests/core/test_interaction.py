@@ -117,12 +117,26 @@ def move(controller, x, y, at_seconds):
     )
 
 
+def sustained_horizontal_move(controller, instantaneous_px_s, dt=0.05, steps=20, start_at=1.0):
+    """Simulate steady horizontal dragging at a constant instantaneous
+    speed for several samples, letting the velocity EMA converge close to
+    `instantaneous_px_s` — matches a real sustained swing, unlike a single
+    huge jump (which the EMA deliberately dampens, live-test 2026-07-20)."""
+    x = 0.0
+    t = start_at
+    step_px = instantaneous_px_s * dt
+    for _ in range(steps):
+        x += step_px
+        t += dt
+        move(controller, x=x, y=0, at_seconds=t)
+
+
 def test_fast_horizontal_swing_escalates_to_swing_tier(rig):
     controller, commands, _ = rig
     controller.on_drag_started(DragStarted(timestamp=TS, grab_point=ScreenPoint(x=0, y=0)))
-    # A big horizontal jump in a small dt: velocity well above the swing threshold.
-    fast_px = DRAG_HORIZONTAL_VELOCITY_TIER_PX_S[0] * 2
-    move(controller, x=fast_px, y=0, at_seconds=1.0)
+    # Sustained horizontal speed above the swing threshold, comfortably
+    # below the annoyed one, given enough samples for the EMA to converge.
+    sustained_horizontal_move(controller, DRAG_HORIZONTAL_VELOCITY_TIER_PX_S[0] * 1.5)
     assert commands[-1].animation_id == SWING_ASSET_ID
 
 
@@ -157,27 +171,41 @@ def test_long_motionless_hold_escalates_straight_to_annoyed(rig):
 def test_very_fast_horizontal_swing_escalates_straight_to_annoyed_tier(rig):
     controller, commands, _ = rig
     controller.on_drag_started(DragStarted(timestamp=TS, grab_point=ScreenPoint(x=0, y=0)))
-    fast_px = DRAG_HORIZONTAL_VELOCITY_TIER_PX_S[1] * 2
-    move(controller, x=fast_px, y=0, at_seconds=1.0)
+    sustained_horizontal_move(controller, DRAG_HORIZONTAL_VELOCITY_TIER_PX_S[1] * 1.5)
     assert commands[-1].animation_id == ANNOYED_DRAG_ASSET_ID
+
+
+def test_single_fast_sample_does_not_spike_straight_to_annoyed(rig):
+    """The old raw-instantaneous signal let one noisy sample (two
+    DragMoved events a couple ms apart) jump straight from calm to
+    annoyed, skipping SWING entirely - live-test 2026-07-20. The EMA only
+    partially moves toward a single sample's instantaneous speed, so even
+    a spike well above the annoyed threshold should land in SWING first,
+    not jump straight past it."""
+    controller, commands, _ = rig
+    controller.on_drag_started(DragStarted(timestamp=TS, grab_point=ScreenPoint(x=0, y=0)))
+    move(controller, x=DRAG_HORIZONTAL_VELOCITY_TIER_PX_S[1] * 2, y=0, at_seconds=1.0)
+    assert commands[-1].animation_id == SWING_ASSET_ID  # not straight to annoyed
 
 
 def test_drag_tier_is_sticky_and_does_not_step_back_down(rig):
     controller, commands, _ = rig
     controller.on_drag_started(DragStarted(timestamp=TS, grab_point=ScreenPoint(x=0, y=0)))
-    move(controller, x=DRAG_HORIZONTAL_VELOCITY_TIER_PX_S[0] * 2, y=0, at_seconds=1.0)
+    sustained_horizontal_move(controller, DRAG_HORIZONTAL_VELOCITY_TIER_PX_S[0] * 1.5)
     assert commands[-1].animation_id == SWING_ASSET_ID
-    # A subsequent slow, brief move must not un-escalate the tier or
-    # re-dispatch the same clip.
-    move(controller, x=DRAG_HORIZONTAL_VELOCITY_TIER_PX_S[0] * 2 + 1, y=0, at_seconds=1.5)
+    dispatch_count = len(commands)
+    # A subsequent slow move must not un-escalate the tier or re-dispatch
+    # the same clip, even though the EMA itself will start decaying back
+    # down — the tier tracks the *peak* smoothed value, not the current one.
+    move(controller, x=1, y=0, at_seconds=10.0)
     assert commands[-1].animation_id == SWING_ASSET_ID
-    assert len(commands) == 2  # start + the one escalation, no re-dispatch
+    assert len(commands) == dispatch_count  # no re-dispatch
 
 
 def test_new_drag_resets_the_tier(rig):
     controller, commands, _ = rig
     controller.on_drag_started(DragStarted(timestamp=TS, grab_point=ScreenPoint(x=0, y=0)))
-    move(controller, x=DRAG_HORIZONTAL_VELOCITY_TIER_PX_S[1] * 2, y=0, at_seconds=1.0)
+    sustained_horizontal_move(controller, DRAG_HORIZONTAL_VELOCITY_TIER_PX_S[1] * 1.5)
     assert commands[-1].animation_id == ANNOYED_DRAG_ASSET_ID
     controller.on_drag_ended(DragEnded(timestamp=TS, drop_point=ScreenPoint(x=0, y=0)))
     controller.on_drag_started(DragStarted(timestamp=TS, grab_point=ScreenPoint(x=0, y=0)))

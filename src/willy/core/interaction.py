@@ -50,6 +50,14 @@ DRAG_TIER_ASSETS: tuple[str, ...] = (DRAGGED_ASSET_ID, SWING_ASSET_ID, ANNOYED_D
 # first-pass tuning; retune after live-watching, same as every other threshold here
 DRAG_HOLD_ANNOYED_SECONDS = 8.0  # a long motionless hold jumps straight to ANNOYED, skipping SWING
 DRAG_HORIZONTAL_VELOCITY_TIER_PX_S: tuple[float, ...] = (600.0, 1400.0)
+# Live-test 2026-07-20: raw per-event instantaneous velocity was too noisy
+# to use directly — two DragMoved events a couple ms apart (a perfectly
+# normal small jump at real mouse-report rates) could spike to an
+# unrealistic px/s reading from a tiny dt alone, making SWING nearly
+# unreachable and jumping straight to ANNOYED off a single sample. An EMA
+# smooths that out; DRAG_VELOCITY_EMA_ALPHA is the smoothing weight given
+# to each new sample (higher = less smoothing, more first-pass tuning).
+DRAG_VELOCITY_EMA_ALPHA = 0.25
 
 # A-08: the tier-1 click reaction is a three-stage front-facing sequence
 # (turn to face the camera, hold, turn back) rather than a flat one-shot
@@ -86,7 +94,8 @@ class InteractionController:
         self._is_falling = is_falling
         self._grab_x: int | None = None
         self._drag_hold_seconds = 0.0
-        self._drag_max_horizontal_velocity_px_s = 0.0
+        self._drag_velocity_ema_px_s = 0.0
+        self._drag_peak_smoothed_velocity_px_s = 0.0
         self._drag_tier_rank = 0
         self._last_drag_x: int | None = None
         self._last_drag_timestamp: datetime | None = None
@@ -111,7 +120,8 @@ class InteractionController:
         self._reset_front_sequence()
         self._grab_x = event.grab_point.x
         self._drag_hold_seconds = 0.0
-        self._drag_max_horizontal_velocity_px_s = 0.0
+        self._drag_velocity_ema_px_s = 0.0
+        self._drag_peak_smoothed_velocity_px_s = 0.0
         self._drag_tier_rank = 0
         self._last_drag_x = event.grab_point.x
         self._last_drag_timestamp = event.timestamp
@@ -122,13 +132,21 @@ class InteractionController:
         since the drag started. Horizontal-only, not total displacement:
         SWING_ASSET_ID's art is a left-right pendulum swing, so only real
         left-right motion should be able to trigger it (live-test
-        2026-07-16 — see the module-level comment above the thresholds)."""
+        2026-07-16 — see the module-level comment above the thresholds).
+        The raw per-event speed is smoothed via an EMA before feeding the
+        tier thresholds — see DRAG_VELOCITY_EMA_ALPHA (live-test
+        2026-07-20: an unsmoothed single-sample spike made SWING nearly
+        unreachable)."""
         if self._last_drag_timestamp is not None:
             dt = (event.timestamp - self._last_drag_timestamp).total_seconds()
             if dt > 0 and self._last_drag_x is not None:
-                velocity = abs(event.point.x - self._last_drag_x) / dt
-                self._drag_max_horizontal_velocity_px_s = max(
-                    self._drag_max_horizontal_velocity_px_s, velocity
+                instantaneous = abs(event.point.x - self._last_drag_x) / dt
+                self._drag_velocity_ema_px_s = (
+                    DRAG_VELOCITY_EMA_ALPHA * instantaneous
+                    + (1 - DRAG_VELOCITY_EMA_ALPHA) * self._drag_velocity_ema_px_s
+                )
+                self._drag_peak_smoothed_velocity_px_s = max(
+                    self._drag_peak_smoothed_velocity_px_s, self._drag_velocity_ema_px_s
                 )
         self._last_drag_x = event.point.x
         self._last_drag_timestamp = event.timestamp
@@ -229,7 +247,7 @@ class InteractionController:
         actual horizontal velocity."""
         hold_rank = 2 if self._drag_hold_seconds >= DRAG_HOLD_ANNOYED_SECONDS else 0
         velocity_rank = self._rank_for(
-            self._drag_max_horizontal_velocity_px_s, DRAG_HORIZONTAL_VELOCITY_TIER_PX_S
+            self._drag_peak_smoothed_velocity_px_s, DRAG_HORIZONTAL_VELOCITY_TIER_PX_S
         )
         rank = max(hold_rank, velocity_rank)
         if rank > self._drag_tier_rank:
