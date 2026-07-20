@@ -20,7 +20,8 @@ from willy.core import InteractionController
 from willy.core.interaction import (
     ANNOYED_DRAG_ASSET_ID,
     DRAG_HOLD_ANNOYED_SECONDS,
-    DRAG_HORIZONTAL_VELOCITY_TIER_PX_S,
+    DRAG_SWING_VELOCITY_PX_S,
+    FACING_DRAG_FLIP_THRESHOLD_PX,
     FRONT_ENTER_ASSET_ID,
     FRONT_HOLD_SECONDS,
     FRONT_IDLE_ASSET_ID,
@@ -134,9 +135,9 @@ def sustained_horizontal_move(controller, instantaneous_px_s, dt=0.05, steps=20,
 def test_fast_horizontal_swing_escalates_to_swing_tier(rig):
     controller, commands, _ = rig
     controller.on_drag_started(DragStarted(timestamp=TS, grab_point=ScreenPoint(x=0, y=0)))
-    # Sustained horizontal speed above the swing threshold, comfortably
-    # below the annoyed one, given enough samples for the EMA to converge.
-    sustained_horizontal_move(controller, DRAG_HORIZONTAL_VELOCITY_TIER_PX_S[0] * 1.5)
+    # Sustained horizontal speed above the swing threshold, given enough
+    # samples for the EMA to converge.
+    sustained_horizontal_move(controller, DRAG_SWING_VELOCITY_PX_S * 1.5)
     assert commands[-1].animation_id == SWING_ASSET_ID
 
 
@@ -153,7 +154,7 @@ def test_fast_vertical_only_movement_does_not_escalate_swing(rig):
     (live-test 2026-07-16)."""
     controller, commands, _ = rig
     controller.on_drag_started(DragStarted(timestamp=TS, grab_point=ScreenPoint(x=0, y=0)))
-    fast_px = DRAG_HORIZONTAL_VELOCITY_TIER_PX_S[0] * 2
+    fast_px = DRAG_SWING_VELOCITY_PX_S * 2
     move(controller, x=0, y=fast_px, at_seconds=1.0)  # same x, big y jump
     assert commands[-1].animation_id == "willy_dragged"
 
@@ -168,30 +169,23 @@ def test_long_motionless_hold_escalates_straight_to_annoyed(rig):
     assert commands[-1].animation_id == ANNOYED_DRAG_ASSET_ID
 
 
-def test_very_fast_horizontal_swing_escalates_straight_to_annoyed_tier(rig):
+def test_no_amount_of_velocity_reaches_annoyed(rig):
+    """Fully asymmetric by live-test design (2026-07-20): velocity can
+    only ever reach SWING, never ANNOYED — an earlier version let
+    sustained fast velocity also reach ANNOYED, which converged there
+    almost immediately during a real swing. Only a motionless hold
+    reaches ANNOYED now."""
     controller, commands, _ = rig
     controller.on_drag_started(DragStarted(timestamp=TS, grab_point=ScreenPoint(x=0, y=0)))
-    sustained_horizontal_move(controller, DRAG_HORIZONTAL_VELOCITY_TIER_PX_S[1] * 1.5)
-    assert commands[-1].animation_id == ANNOYED_DRAG_ASSET_ID
-
-
-def test_single_fast_sample_does_not_spike_straight_to_annoyed(rig):
-    """The old raw-instantaneous signal let one noisy sample (two
-    DragMoved events a couple ms apart) jump straight from calm to
-    annoyed, skipping SWING entirely - live-test 2026-07-20. The EMA only
-    partially moves toward a single sample's instantaneous speed, so even
-    a spike well above the annoyed threshold should land in SWING first,
-    not jump straight past it."""
-    controller, commands, _ = rig
-    controller.on_drag_started(DragStarted(timestamp=TS, grab_point=ScreenPoint(x=0, y=0)))
-    move(controller, x=DRAG_HORIZONTAL_VELOCITY_TIER_PX_S[1] * 2, y=0, at_seconds=1.0)
-    assert commands[-1].animation_id == SWING_ASSET_ID  # not straight to annoyed
+    sustained_horizontal_move(controller, DRAG_SWING_VELOCITY_PX_S * 10, steps=60)
+    assert commands[-1].animation_id == SWING_ASSET_ID
+    assert ANNOYED_DRAG_ASSET_ID not in [c.animation_id for c in commands]
 
 
 def test_drag_tier_is_sticky_and_does_not_step_back_down(rig):
     controller, commands, _ = rig
     controller.on_drag_started(DragStarted(timestamp=TS, grab_point=ScreenPoint(x=0, y=0)))
-    sustained_horizontal_move(controller, DRAG_HORIZONTAL_VELOCITY_TIER_PX_S[0] * 1.5)
+    sustained_horizontal_move(controller, DRAG_SWING_VELOCITY_PX_S * 1.5)
     assert commands[-1].animation_id == SWING_ASSET_ID
     dispatch_count = len(commands)
     # A subsequent slow move must not un-escalate the tier or re-dispatch
@@ -205,7 +199,7 @@ def test_drag_tier_is_sticky_and_does_not_step_back_down(rig):
 def test_new_drag_resets_the_tier(rig):
     controller, commands, _ = rig
     controller.on_drag_started(DragStarted(timestamp=TS, grab_point=ScreenPoint(x=0, y=0)))
-    sustained_horizontal_move(controller, DRAG_HORIZONTAL_VELOCITY_TIER_PX_S[1] * 1.5)
+    controller.on_tick_elapsed(TickElapsed(timestamp=TS, dt_seconds=DRAG_HOLD_ANNOYED_SECONDS))
     assert commands[-1].animation_id == ANNOYED_DRAG_ASSET_ID
     controller.on_drag_ended(DragEnded(timestamp=TS, drop_point=ScreenPoint(x=0, y=0)))
     controller.on_drag_started(DragStarted(timestamp=TS, grab_point=ScreenPoint(x=0, y=0)))
@@ -216,6 +210,42 @@ def test_ticks_only_accumulate_hold_time_while_dragging(rig):
     controller, commands, _ = rig
     controller.on_tick_elapsed(TickElapsed(timestamp=TS, dt_seconds=DRAG_HOLD_ANNOYED_SECONDS))
     assert commands == []  # not dragging: no drag-tier state to escalate
+
+
+# --- D-19: facing updates live during a drag, not just at drop ---
+
+
+def test_facing_flips_mid_drag_and_redisplays_the_active_tier(rig):
+    """SWING_ASSET_ID's art is directional — facing must follow the
+    actual swing direction live, not stay stuck at whatever it was
+    before the drag started (live-test 2026-07-20)."""
+    controller, commands, _ = rig
+    controller.on_drag_started(DragStarted(timestamp=TS, grab_point=ScreenPoint(x=0, y=0)))
+    assert controller.facing is Facing.RIGHT  # default rig facing
+    sustained_horizontal_move(controller, DRAG_SWING_VELOCITY_PX_S * 1.5)
+    assert commands[-1].animation_id == SWING_ASSET_ID
+    dispatch_count = len(commands)
+    # Now swing back past the flip threshold, the opposite direction.
+    move(controller, x=-(FACING_DRAG_FLIP_THRESHOLD_PX + 5), y=0, at_seconds=100.0)
+    assert controller.facing is Facing.LEFT
+    assert commands[-1].animation_id == SWING_ASSET_ID  # re-dispatched, same tier
+    assert commands[-1].facing is Facing.LEFT
+    assert len(commands) == dispatch_count + 1  # exactly one re-dispatch for the flip
+
+
+def test_small_jitter_does_not_flip_facing_mid_drag(rig):
+    controller, commands, _ = rig
+    controller.on_drag_started(DragStarted(timestamp=TS, grab_point=ScreenPoint(x=0, y=0)))
+    # Flip to LEFT first (default rig facing is RIGHT), so the jitter
+    # check below is a real "does it flip back" test, not a no-op.
+    move(controller, x=-(FACING_DRAG_FLIP_THRESHOLD_PX + 5), y=0, at_seconds=1.0)
+    assert controller.facing is Facing.LEFT
+    # Small back-and-forth jitter within the band around the new
+    # reference point must not flip facing back to RIGHT.
+    move(controller, x=-(FACING_DRAG_FLIP_THRESHOLD_PX + 5) + 5, y=0, at_seconds=1.1)
+    assert controller.facing is Facing.LEFT
+    move(controller, x=-(FACING_DRAG_FLIP_THRESHOLD_PX + 5) - 5, y=0, at_seconds=1.2)
+    assert controller.facing is Facing.LEFT
 
 
 # --- D-16: startle reaction at the start of a real gravity fall ---

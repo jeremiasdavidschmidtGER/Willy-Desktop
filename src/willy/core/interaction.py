@@ -30,7 +30,16 @@ from willy.contracts import (
 DRAGGED_ASSET_ID = "willy_dragged"
 STARTLE_ASSET_ID = "willy_surprised"
 LANDING_ASSET_ID = "willy_drop_landing"
-FACING_FLIP_THRESHOLD_PX = 2  # tiny horizontal drift keeps current facing
+FACING_FLIP_THRESHOLD_PX = 2  # tiny horizontal drift keeps current facing (at drop)
+# Net horizontal drift needed to flip facing *during* an active drag —
+# much bigger than FACING_FLIP_THRESHOLD_PX on purpose: a real swing
+# gesture oscillates left-right by design, so a tiny per-event threshold
+# would flicker facing on every jitter. Resets its reference point on
+# every flip, so it's "how far from the last flip," not total drift
+# (live-test 2026-07-20: facing was previously only set at drop, so
+# SWING_ASSET_ID's directional pose stayed stuck facing one way
+# regardless of which way the drag was actually going).
+FACING_DRAG_FLIP_THRESHOLD_PX = 20
 
 # D-18: escalating drag tiers, same "hanging" pose family as DRAGGED_ASSET_ID
 # but reads as more agitated. Escalation is sticky for the rest of the drag
@@ -38,25 +47,27 @@ FACING_FLIP_THRESHOLD_PX = 2  # tiny horizontal drift keeps current facing
 # never needs a decay step mid-drag. Art landed 2026-07-16 (Python-Test
 # codex/drag-expansion) — see OPEN_DECISIONS.md.
 #
-# The two signals are NOT symmetric, by live-test design: SWING_ASSET_ID's
-# art depicts real left-right cursor motion (a wide horizontal pendulum
-# swing) — it must never fire from a motionless hold, only from actual
-# horizontal drag velocity. A long hold with no real swinging escalates
-# straight to ANNOYED instead (its art has no implied motion, so a static
-# "still stuck up here" read is fine). See DRAG_HOLD_ANNOYED_SECONDS below.
+# The two signals are fully asymmetric, by live-test design: velocity can
+# only ever reach SWING, never ANNOYED — SWING_ASSET_ID's art depicts real
+# left-right cursor motion, so a fast swing should show the swing pose,
+# not skip past it. ANNOYED is reached only via a long motionless hold
+# (its art has no implied motion, so "still stuck up here" reads fine
+# static). Live-test 2026-07-20: an earlier version let sustained fast
+# velocity also reach ANNOYED, which converged there almost immediately
+# during a real swing (the EMA ramps up in just a handful of samples) —
+# removed rather than re-tuned, since hold-duration already covers
+# ANNOYED well and gave the two tiers a clean, predictable split.
 SWING_ASSET_ID = "willy_dragged_swing"
 ANNOYED_DRAG_ASSET_ID = "willy_dragged_annoyed"
 DRAG_TIER_ASSETS: tuple[str, ...] = (DRAGGED_ASSET_ID, SWING_ASSET_ID, ANNOYED_DRAG_ASSET_ID)
 # first-pass tuning; retune after live-watching, same as every other threshold here
 DRAG_HOLD_ANNOYED_SECONDS = 8.0  # a long motionless hold jumps straight to ANNOYED, skipping SWING
-DRAG_HORIZONTAL_VELOCITY_TIER_PX_S: tuple[float, ...] = (600.0, 1400.0)
-# Live-test 2026-07-20: raw per-event instantaneous velocity was too noisy
-# to use directly — two DragMoved events a couple ms apart (a perfectly
-# normal small jump at real mouse-report rates) could spike to an
-# unrealistic px/s reading from a tiny dt alone, making SWING nearly
-# unreachable and jumping straight to ANNOYED off a single sample. An EMA
-# smooths that out; DRAG_VELOCITY_EMA_ALPHA is the smoothing weight given
-# to each new sample (higher = less smoothing, more first-pass tuning).
+DRAG_SWING_VELOCITY_PX_S = 600.0
+# Raw per-event instantaneous velocity was too noisy to use directly — two
+# DragMoved events a couple ms apart (a perfectly normal small jump at
+# real mouse-report rates) could spike to an unrealistic px/s reading
+# from a tiny dt alone. An EMA smooths that out; DRAG_VELOCITY_EMA_ALPHA
+# is the smoothing weight given to each new sample.
 DRAG_VELOCITY_EMA_ALPHA = 0.25
 
 # A-08: the tier-1 click reaction is a three-stage front-facing sequence
@@ -99,6 +110,7 @@ class InteractionController:
         self._drag_tier_rank = 0
         self._last_drag_x: int | None = None
         self._last_drag_timestamp: datetime | None = None
+        self._facing_ref_x: int | None = None
         self._reaction_tiers = tuple(sorted(reaction_tiers, key=lambda tier: tier[0]))
         self._annoyance_decay_per_second = annoyance_decay_per_second
         self._annoyance_cap = self._reaction_tiers[-1][0] * 2.0
@@ -125,6 +137,7 @@ class InteractionController:
         self._drag_tier_rank = 0
         self._last_drag_x = event.grab_point.x
         self._last_drag_timestamp = event.timestamp
+        self._facing_ref_x = event.grab_point.x
         self._play(DRAGGED_ASSET_ID)
 
     def on_drag_moved(self, event: DragMoved) -> None:
@@ -136,7 +149,21 @@ class InteractionController:
         The raw per-event speed is smoothed via an EMA before feeding the
         tier thresholds — see DRAG_VELOCITY_EMA_ALPHA (live-test
         2026-07-20: an unsmoothed single-sample spike made SWING nearly
-        unreachable)."""
+        unreachable). Also updates facing live (with hysteresis, see
+        FACING_DRAG_FLIP_THRESHOLD_PX) rather than only at drop, so a
+        directional pose actually follows the current swing direction."""
+        if self._facing_ref_x is not None:
+            drift = event.point.x - self._facing_ref_x
+            new_facing = None
+            if drift > FACING_DRAG_FLIP_THRESHOLD_PX:
+                new_facing = Facing.RIGHT
+            elif drift < -FACING_DRAG_FLIP_THRESHOLD_PX:
+                new_facing = Facing.LEFT
+            if new_facing is not None and new_facing != self._facing:
+                self._facing = new_facing
+                self._facing_ref_x = event.point.x
+                if self._drag_tier_rank > 0:
+                    self._play(DRAG_TIER_ASSETS[self._drag_tier_rank])
         if self._last_drag_timestamp is not None:
             dt = (event.timestamp - self._last_drag_timestamp).total_seconds()
             if dt > 0 and self._last_drag_x is not None:
@@ -241,26 +268,18 @@ class InteractionController:
         the dangle loop. Sticky for the rest of the drag — never steps
         back down until DragEnded starts a fresh one.
 
-        Asymmetric on purpose: a motionless hold can only ever reach
-        ANNOYED (rank 2), never SWING (rank 1) — SWING_ASSET_ID's art
-        depicts real left-right motion, so it may only be reached via
-        actual horizontal velocity."""
+        Fully asymmetric on purpose (live-test 2026-07-20): a motionless
+        hold can only ever reach ANNOYED (rank 2), never SWING (rank 1);
+        velocity can only ever reach SWING, never ANNOYED. Each tier has
+        exactly one way in."""
         hold_rank = 2 if self._drag_hold_seconds >= DRAG_HOLD_ANNOYED_SECONDS else 0
-        velocity_rank = self._rank_for(
-            self._drag_peak_smoothed_velocity_px_s, DRAG_HORIZONTAL_VELOCITY_TIER_PX_S
+        velocity_rank = (
+            1 if self._drag_peak_smoothed_velocity_px_s >= DRAG_SWING_VELOCITY_PX_S else 0
         )
         rank = max(hold_rank, velocity_rank)
         if rank > self._drag_tier_rank:
             self._drag_tier_rank = rank
             self._play(DRAG_TIER_ASSETS[rank])
-
-    @staticmethod
-    def _rank_for(value: float, thresholds: Sequence[float]) -> int:
-        rank = 0
-        for index, threshold in enumerate(thresholds, start=1):
-            if value >= threshold:
-                rank = index
-        return rank
 
     def _enter_or_refresh_front(self) -> None:
         if self._front_state in ("entering", "holding"):
