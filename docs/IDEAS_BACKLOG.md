@@ -41,8 +41,9 @@ gate picks them up, not for Gate A.
 
 ## 2026-07-15 — dragging-animation expansion, scoped but not scheduled
 
-Follow-up to the `willy_dragged_by_cursor_rough.png` reference sheet flagged
-in the asset factory's `HANDOFF.md`. Scoping conversation held with the user
+**Implemented 2026-07-16/20** — see below, kept for history. Follow-up to
+the `willy_dragged_by_cursor_rough.png` reference sheet flagged in the
+asset factory's `HANDOFF.md`. Scoping conversation held with the user
 2026-07-15 — full technical scope in `OPEN_DECISIONS.md` **D-18**. Summary:
 swing-motion dangle + annoyed dangle (anger-spark icon) are in scope as two
 new escalation tiers on the existing drag loop, triggered by combined
@@ -51,6 +52,26 @@ ground-resist/floor-drag is explicitly deferred pending its own scoping
 conversation. Scheduled for **after A-12** — no code or art yet. Pull this
 into a real backlog entry (Gate B backlog file doesn't exist yet) once it's
 actually next up.
+
+**Status as of 2026-07-20: built, live-tested through five tuning rounds,
+sitting on `feature/d18-drag-tiers` (PR #19, CI green), not yet merged —
+merging is the human's call, not done automatically.** The design that
+shipped differs from D-18's original scoping in ways D-19
+(`OPEN_DECISIONS.md`) documents in full:
+- Ground-resist stayed out of scope, as planned.
+- `willy_dragged_annoyed`'s leg movement never worked out (tried locally
+  and twice by Codex — see asset factory `README.md` failure #26);
+  shipped with two baked-in eye-blinks instead.
+- `willy_fall` (existing but never-exported art, same situation as the
+  D-17 front-facing pose) was added alongside `willy_surprised` as a
+  second, randomly-chosen fall-start reaction — unrelated to the
+  drag-tier work itself but bundled into the same round.
+- The trigger design changed twice after real dragging exposed problems
+  the original scoping didn't anticipate: SWING ended up needing to be
+  *reactive* (ends when the cursor stops) rather than sticky, and its
+  velocity threshold got tuned up through several rounds
+  (600 → 1100 → 1700 → 2100 px/s) before it stopped triggering on
+  ordinary dragging.
 - ~~**Tier-1 click reaction is too strong.**~~ **Resolved:** swapped tier 1
   from `willy_surprised` to a new front-facing turn sequence
   (`willy_front_enter`/`idle`/`leave`). Turned out the concept sheet's
