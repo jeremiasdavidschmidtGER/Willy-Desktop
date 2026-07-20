@@ -1,7 +1,8 @@
 """Transparent frameless Willy window (A-03 shell, A-07 dragging, A-08 clicks).
 
 Dumb shell: it shows a pixmap, executes the window commands it is
-handed, and reports facts (`DragStarted`/`DragEnded`/`WillyClicked`) — it
+handed, and reports facts
+(`DragStarted`/`DragMoved`/`DragEnded`/`WillyClicked`) — it
 never decides anything (platform publishes, core interprets; ARCHITECTURE
 §4). Never steals keyboard focus.
 """
@@ -18,6 +19,7 @@ from PySide6.QtWidgets import QWidget
 from willy.contracts import (
     Clock,
     DragEnded,
+    DragMoved,
     DragStarted,
     EventBus,
     MouseButton,
@@ -200,6 +202,7 @@ class WillyWindow(QWidget):
             )
         assert self._grab_offset is not None
         self.move(global_pos - self._grab_offset)  # follow cursor, keep grab offset
+        self._publish(DragMoved, point=ScreenPoint(x=global_pos.x(), y=global_pos.y()))
         event.accept()
 
     def mouseReleaseEvent(self, event) -> None:  # noqa: N802

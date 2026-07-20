@@ -1,5 +1,7 @@
-"""D-16: startle reaction (willy_surprised) at the start of a real fall,
-driven end-to-end through WillyApp with real art and real gravity."""
+"""D-16: startle reaction at the start of a real fall, driven end-to-end
+through WillyApp with real art and real gravity. D-19: this is now one of
+two randomly-chosen reactions (willy_surprised, willy_fall) — tests that
+don't care which one played check membership rather than the exact id."""
 
 from __future__ import annotations
 
@@ -41,18 +43,22 @@ def settle(app, fake_clock, max_steps=2000):
 def test_release_plays_startle_not_dragged(app, qtbot):
     drag_release(app, qtbot)
     assert app.window.falling
-    assert app.controller.current_animation_id == "willy_surprised"
+    assert app.controller.current_animation_id in ("willy_surprised", "willy_fall")
 
 
-def test_long_fall_resumes_dangling_after_startle_finishes(app, qtbot, fake_clock):
+def test_long_fall_keeps_looping_the_fall_reaction(app, qtbot, fake_clock):
+    """D-19 reversal: a fall reaction used to play once and hand off to
+    willy_dragged if the fall was still going — live-tested as randomly
+    switching poses partway down. It now loops for the whole fall."""
     drag_release(app, qtbot)
-    fake_clock.advance(1.3)  # past willy_surprised's 1232 ms, still falling
+    reaction = app.controller.current_animation_id
+    fake_clock.advance(1.3)  # past either fall-start reaction's own duration, still falling
     app.render_tick()
     assert app.window.falling  # confirm the fall is genuinely still ongoing
-    assert app.controller.current_animation_id == "willy_dragged"
+    assert app.controller.current_animation_id == reaction  # still looping, not willy_dragged
 
 
-def test_eventually_lands_after_startle_and_dangle(app, qtbot, fake_clock):
+def test_eventually_lands_after_the_fall_reaction(app, qtbot, fake_clock):
     drag_release(app, qtbot)
     settle(app, fake_clock)
     assert not app.window.falling

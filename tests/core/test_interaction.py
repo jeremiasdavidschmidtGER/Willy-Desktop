@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -8,6 +8,7 @@ from willy.contracts import (
     AnimationFinished,
     AnimationPriority,
     DragEnded,
+    DragMoved,
     DragStarted,
     Facing,
     MouseButton,
@@ -17,10 +18,18 @@ from willy.contracts import (
 )
 from willy.core import InteractionController
 from willy.core.interaction import (
+    ANNOYED_DRAG_ASSET_ID,
+    DRAG_HOLD_ANNOYED_SECONDS,
+    DRAG_SWING_VELOCITY_PX_S,
+    FACING_DRAG_FLIP_THRESHOLD_PX,
+    FALL_ASSET_ID,
+    FALL_START_REACTIONS,
     FRONT_ENTER_ASSET_ID,
     FRONT_HOLD_SECONDS,
     FRONT_IDLE_ASSET_ID,
     FRONT_LEAVE_ASSET_ID,
+    STARTLE_ASSET_ID,
+    SWING_ASSET_ID,
 )
 
 TS = datetime(2026, 7, 14, 12, 0, 0, tzinfo=UTC)
@@ -31,7 +40,12 @@ def rig():
     commands = []
     dirty_marks = []
     controller = InteractionController(
-        dispatch=commands.append, state_dirty=lambda: dirty_marks.append(True)
+        dispatch=commands.append,
+        state_dirty=lambda: dirty_marks.append(True),
+        # Deterministic by default (always STARTLE) so existing fall
+        # tests don't depend on real randomness; tests of the D-19
+        # random-choice behavior itself override this explicitly.
+        random_choice=lambda choices: STARTLE_ASSET_ID,
     )
     return controller, commands, dirty_marks
 
@@ -101,6 +115,195 @@ def test_drag_ended_without_started_still_lands_safely(rig):
     assert dirty == [True]
 
 
+# --- D-18: escalating drag tiers (horizontal swing-intensity + hold-duration) ---
+
+
+def move(controller, x, y, at_seconds):
+    """at_seconds is an absolute offset from TS (drag-clock time), not a
+    delta from the previous move — matches how DragMoved.timestamp works."""
+    controller.on_drag_moved(
+        DragMoved(timestamp=TS + timedelta(seconds=at_seconds), point=ScreenPoint(x=x, y=y))
+    )
+
+
+def sustained_horizontal_move(controller, instantaneous_px_s, dt=0.05, steps=20, start_at=1.0):
+    """Simulate steady horizontal dragging at a constant instantaneous
+    speed for several samples, letting the velocity EMA converge close to
+    `instantaneous_px_s` — matches a real sustained swing, unlike a single
+    huge jump (which the EMA deliberately dampens, live-test 2026-07-20).
+    Returns the final x reached, so callers don't have to recompute it."""
+    x = 0.0
+    t = start_at
+    step_px = instantaneous_px_s * dt
+    for _ in range(steps):
+        x += step_px
+        t += dt
+        move(controller, x=x, y=0, at_seconds=t)
+    return x
+
+
+def test_fast_horizontal_swing_escalates_to_swing_tier(rig):
+    controller, commands, _ = rig
+    controller.on_drag_started(DragStarted(timestamp=TS, grab_point=ScreenPoint(x=0, y=0)))
+    # Sustained horizontal speed above the swing threshold, given enough
+    # samples for the EMA to converge.
+    sustained_horizontal_move(controller, DRAG_SWING_VELOCITY_PX_S * 1.5)
+    assert commands[-1].animation_id == SWING_ASSET_ID
+
+
+def test_slow_moves_do_not_escalate(rig):
+    controller, commands, _ = rig
+    controller.on_drag_started(DragStarted(timestamp=TS, grab_point=ScreenPoint(x=0, y=0)))
+    move(controller, x=1, y=0, at_seconds=1.0)  # 1 px/s: far below any threshold
+    assert commands[-1].animation_id == "willy_dragged"
+
+
+def test_fast_vertical_only_movement_does_not_escalate_swing(rig):
+    """SWING_ASSET_ID's art is a left-right pendulum swing — a fast
+    *vertical* shake must not trigger it, only real horizontal motion
+    (live-test 2026-07-16)."""
+    controller, commands, _ = rig
+    controller.on_drag_started(DragStarted(timestamp=TS, grab_point=ScreenPoint(x=0, y=0)))
+    fast_px = DRAG_SWING_VELOCITY_PX_S * 2
+    move(controller, x=0, y=fast_px, at_seconds=1.0)  # same x, big y jump
+    assert commands[-1].animation_id == "willy_dragged"
+
+
+def test_pickup_does_not_immediately_escalate_to_swing(rig):
+    """The very first DragMoved right after DragStarted can land only a
+    fraction of a ms later — dividing a real pixel jump by that
+    near-zero dt spiked velocity the instant Willy was picked up
+    (live-test 2026-07-20), before any real swinging happened."""
+    controller, commands, _ = rig
+    controller.on_drag_started(DragStarted(timestamp=TS, grab_point=ScreenPoint(x=0, y=0)))
+    move(controller, x=40, y=0, at_seconds=0.001)  # the drag-threshold-crossing jump itself
+    assert commands[-1].animation_id == "willy_dragged"
+
+
+def test_long_motionless_hold_escalates_straight_to_annoyed(rig):
+    """A hold alone can only ever reach ANNOYED, never SWING — SWING's art
+    depicts real dragging motion, so it must never fire from an idle
+    hold (live-test 2026-07-16)."""
+    controller, commands, _ = rig
+    controller.on_drag_started(DragStarted(timestamp=TS, grab_point=ScreenPoint(x=0, y=0)))
+    controller.on_tick_elapsed(TickElapsed(timestamp=TS, dt_seconds=DRAG_HOLD_ANNOYED_SECONDS))
+    assert commands[-1].animation_id == ANNOYED_DRAG_ASSET_ID
+
+
+def test_no_amount_of_velocity_reaches_annoyed(rig):
+    """Fully asymmetric by live-test design (2026-07-20): velocity can
+    only ever reach SWING, never ANNOYED — an earlier version let
+    sustained fast velocity also reach ANNOYED, which converged there
+    almost immediately during a real swing. Only a motionless hold
+    reaches ANNOYED now."""
+    controller, commands, _ = rig
+    controller.on_drag_started(DragStarted(timestamp=TS, grab_point=ScreenPoint(x=0, y=0)))
+    sustained_horizontal_move(controller, DRAG_SWING_VELOCITY_PX_S * 10, steps=60)
+    assert commands[-1].animation_id == SWING_ASSET_ID
+    assert ANNOYED_DRAG_ASSET_ID not in [c.animation_id for c in commands]
+
+
+def test_swing_reverts_to_calm_once_a_tick_passes_with_no_movement(rig):
+    """D-19 reversal: SWING is deliberately NOT sticky — it must end once
+    the cursor genuinely stops, not linger for the rest of the drag. No
+    DragMoved fires while stationary, so "stopped" can only be detected
+    on a tick with no movement since the *previous* tick — the very next
+    tick after a burst of movement still correctly sees that movement as
+    recent and doesn't clear yet; the one after *that*, with a fully
+    silent interval, does."""
+    controller, commands, _ = rig
+    controller.on_drag_started(DragStarted(timestamp=TS, grab_point=ScreenPoint(x=0, y=0)))
+    sustained_horizontal_move(controller, DRAG_SWING_VELOCITY_PX_S * 1.5)
+    assert commands[-1].animation_id == SWING_ASSET_ID
+    controller.on_tick_elapsed(TickElapsed(timestamp=TS, dt_seconds=1.0))
+    assert commands[-1].animation_id == SWING_ASSET_ID  # still recent, doesn't clear yet
+    controller.on_tick_elapsed(TickElapsed(timestamp=TS, dt_seconds=1.0))  # a full silent tick
+    assert commands[-1].animation_id == "willy_dragged"
+
+
+def test_annoyed_is_a_ceiling_a_fast_swing_cannot_undo(rig):
+    """Unlike SWING, ANNOYED is still sticky for the rest of the drag —
+    once DRAG_HOLD_ANNOYED_SECONDS of total drag time has passed, even
+    an energetic swing afterward must not drop back to SWING."""
+    controller, commands, _ = rig
+    controller.on_drag_started(DragStarted(timestamp=TS, grab_point=ScreenPoint(x=0, y=0)))
+    controller.on_tick_elapsed(TickElapsed(timestamp=TS, dt_seconds=DRAG_HOLD_ANNOYED_SECONDS))
+    assert commands[-1].animation_id == ANNOYED_DRAG_ASSET_ID
+    sustained_horizontal_move(controller, DRAG_SWING_VELOCITY_PX_S * 1.5, start_at=20.0)
+    assert commands[-1].animation_id == ANNOYED_DRAG_ASSET_ID  # unchanged, no step back to SWING
+
+
+def test_new_drag_resets_the_tier(rig):
+    controller, commands, _ = rig
+    controller.on_drag_started(DragStarted(timestamp=TS, grab_point=ScreenPoint(x=0, y=0)))
+    controller.on_tick_elapsed(TickElapsed(timestamp=TS, dt_seconds=DRAG_HOLD_ANNOYED_SECONDS))
+    assert commands[-1].animation_id == ANNOYED_DRAG_ASSET_ID
+    controller.on_drag_ended(DragEnded(timestamp=TS, drop_point=ScreenPoint(x=0, y=0)))
+    controller.on_drag_started(DragStarted(timestamp=TS, grab_point=ScreenPoint(x=0, y=0)))
+    assert commands[-1].animation_id == "willy_dragged"  # back to the calm tier
+
+
+def test_ticks_only_accumulate_hold_time_while_dragging(rig):
+    controller, commands, _ = rig
+    controller.on_tick_elapsed(TickElapsed(timestamp=TS, dt_seconds=DRAG_HOLD_ANNOYED_SECONDS))
+    assert commands == []  # not dragging: no drag-tier state to escalate
+
+
+# --- D-19: facing updates live during a drag, not just at drop ---
+
+
+def test_facing_flips_mid_drag_and_redisplays_the_active_tier(rig):
+    """SWING_ASSET_ID's art is directional — facing must follow the
+    actual swing direction live, not stay stuck at whatever it was
+    before the drag started (live-test 2026-07-20)."""
+    controller, commands, _ = rig
+    controller.on_drag_started(DragStarted(timestamp=TS, grab_point=ScreenPoint(x=0, y=0)))
+    assert controller.facing is Facing.RIGHT  # default rig facing
+    sustained_horizontal_move(controller, DRAG_SWING_VELOCITY_PX_S * 1.5)
+    assert commands[-1].animation_id == SWING_ASSET_ID
+    dispatch_count = len(commands)
+    # Now swing back past the flip threshold, the opposite direction.
+    move(controller, x=-(FACING_DRAG_FLIP_THRESHOLD_PX + 5), y=0, at_seconds=100.0)
+    assert controller.facing is Facing.LEFT
+    assert commands[-1].animation_id == SWING_ASSET_ID  # re-dispatched, same tier
+    assert commands[-1].facing is Facing.LEFT
+    assert len(commands) == dispatch_count + 1  # exactly one re-dispatch for the flip
+
+
+def test_facing_flips_soon_after_reversal_not_after_retracing_the_whole_swing(rig):
+    """An earlier version anchored the hysteresis reference at the last
+    flip and never moved it while travel continued the same direction —
+    reversing after a long swing needed pulling back almost the entire
+    swing distance before it would flip, which read as major lag
+    (live-test 2026-07-20). It should only take a pull-back of
+    FACING_DRAG_FLIP_THRESHOLD_PX from the *most recent extreme*,
+    regardless of how far that extreme was from the start."""
+    controller, commands, _ = rig
+    controller.on_drag_started(DragStarted(timestamp=TS, grab_point=ScreenPoint(x=0, y=0)))
+    reached_x = sustained_horizontal_move(controller, DRAG_SWING_VELOCITY_PX_S * 1.5)
+    assert reached_x > 500  # a long swing, not a short one
+    assert controller.facing is Facing.RIGHT
+    # Pull back just past the threshold from the extreme — not anywhere
+    # close to retracing the full swing distance.
+    move(controller, x=reached_x - (FACING_DRAG_FLIP_THRESHOLD_PX + 1), y=0, at_seconds=100.0)
+    assert controller.facing is Facing.LEFT
+
+
+def test_small_jitter_does_not_flip_facing_mid_drag(rig):
+    controller, commands, _ = rig
+    controller.on_drag_started(DragStarted(timestamp=TS, grab_point=ScreenPoint(x=0, y=0)))
+    # Flip to LEFT first (default rig facing is RIGHT), so the jitter
+    # check below is a real "does it flip back" test, not a no-op.
+    move(controller, x=-(FACING_DRAG_FLIP_THRESHOLD_PX + 5), y=0, at_seconds=1.0)
+    assert controller.facing is Facing.LEFT
+    # Small back-and-forth jitter within the band around the new
+    # reference point must not flip facing back to RIGHT.
+    move(controller, x=-(FACING_DRAG_FLIP_THRESHOLD_PX + 5) + 5, y=0, at_seconds=1.1)
+    assert controller.facing is Facing.LEFT
+    move(controller, x=-(FACING_DRAG_FLIP_THRESHOLD_PX + 5) - 5, y=0, at_seconds=1.2)
+    assert controller.facing is Facing.LEFT
+
+
 # --- D-16: startle reaction at the start of a real gravity fall ---
 
 
@@ -111,6 +314,24 @@ def test_fall_started_plays_startle_pose(rig):
     assert commands[-1].priority is AnimationPriority.REACTION
 
 
+def test_fall_started_loops_the_chosen_reaction_for_the_whole_fall(rig):
+    """D-19: a fall reaction used to play once and then hand off to
+    DRAGGED_ASSET_ID if the fall was still going — live-tested as
+    randomly switching poses partway down, especially once FALL_ASSET_ID
+    (much shorter than STARTLE_ASSET_ID) was added. It now loops for as
+    long as the fall lasts; only DragEnded's landing pose interrupts it."""
+    controller, commands, _ = rig
+    controller.on_fall_started()
+    assert commands[-1].loop_override is True
+    # A finished event for it (however that's driven upstream) must not
+    # hand off to DRAGGED_ASSET_ID anymore — there's nothing listening
+    # for it at all now.
+    controller.on_animation_finished(
+        AnimationFinished(timestamp=TS, animation_id="willy_surprised")
+    )
+    assert len(commands) == 1  # no extra dispatch
+
+
 def test_fall_started_uses_current_facing(rig):
     controller, commands, _ = rig
     drag(controller, grab_x=100, drop_x=40)  # flips to LEFT
@@ -118,30 +339,23 @@ def test_fall_started_uses_current_facing(rig):
     assert commands[-1].facing is Facing.LEFT
 
 
-def test_startle_finished_while_still_falling_resumes_dragged():
+def test_fall_reaction_is_chosen_from_both_options():
+    """D-19: willy_fall alternates randomly with willy_surprised, rather
+    than replacing it — the controller must offer both to the injected
+    chooser, not hardcode one."""
     commands = []
+    offered = []
+
+    def spy_choice(choices):
+        offered.append(tuple(choices))
+        return choices[-1]
+
     controller = InteractionController(
-        dispatch=commands.append, state_dirty=lambda: None, is_falling=lambda: True
+        dispatch=commands.append, state_dirty=lambda: None, random_choice=spy_choice
     )
     controller.on_fall_started()
-    controller.on_animation_finished(
-        AnimationFinished(timestamp=TS, animation_id="willy_surprised")
-    )
-    assert [command.animation_id for command in commands] == ["willy_surprised", "willy_dragged"]
-
-
-def test_startle_finished_after_landing_does_not_resume_dragged():
-    commands = []
-    controller = InteractionController(
-        dispatch=commands.append, state_dirty=lambda: None, is_falling=lambda: False
-    )
-    controller.on_fall_started()
-    controller.on_animation_finished(
-        AnimationFinished(timestamp=TS, animation_id="willy_surprised")
-    )
-    assert [command.animation_id for command in commands] == [
-        "willy_surprised"
-    ]  # no extra dispatch
+    assert offered == [FALL_START_REACTIONS]
+    assert commands[-1].animation_id == FALL_ASSET_ID
 
 
 def test_unrelated_animation_finished_is_ignored(rig):
@@ -309,7 +523,8 @@ def test_drag_started_resets_front_sequence(rig):
     controller.on_drag_started(DragStarted(timestamp=TS, grab_point=ScreenPoint(x=10, y=20)))
     assert commands[-1].animation_id == "willy_dragged"
     # A tick that would have expired the (now-abandoned) hold must not
-    # spuriously play the turn-away clip on top of the drag.
+    # spuriously play the turn-away clip on top of the drag. Also below
+    # DRAG_HOLD_ANNOYED_SECONDS, so no D-18 drag-tier escalation either.
     tick(controller, FRONT_HOLD_SECONDS + 0.1)
     assert commands[-1].animation_id == "willy_dragged"
 

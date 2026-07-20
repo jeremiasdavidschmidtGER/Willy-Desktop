@@ -178,3 +178,149 @@ ground-resist/floor-drag pose. Scoped this round:
 - **Timing:** scheduled for **after A-12** (Gate A acceptance run) — not
   Gate A backlog work. No Gate B backlog file exists yet, so this stays
   parked in `IDEAS_BACKLOG.md` until one does.
+
+**D-19: D-18 implementation — the swing tier is horizontal-motion-only,
+not symmetric with the annoyed tier.** (2026-07-16, user decision after
+live-testing the art + code together, PR #19.) `DragMoved` landed in
+`src/willy/contracts/events.py` per D-18's escalation (approved before
+editing); `InteractionController` derives a swing-velocity signal from
+consecutive `DragMoved` points and a hold-duration signal from
+`TickElapsed` while dragging. Two live-test findings changed the
+original "combined signal, whichever crosses first" design from D-18:
+- **The swing pose's motion curve.** Codex's first cut doubled
+  `willy_dragged`'s rotate+dy amplitude ("energetic pendulum arc") —
+  live-tested as "wobbles too much." `willy_dragged_swing`'s art (a
+  stretched, gliding-looking pose) reads better swung left-right during
+  an actual drag than spinning/bobbing in place. Fixed in the asset
+  factory (`concept2pet/animate.py`): now a `dx`-driven horizontal
+  swing (±14px) with a small phase-locked `rotate` lean, `dy` back near
+  the base dangle's level.
+- **The trigger must match**, per the same live-test: "this pose must
+  be reserved for dragging from left to right only, ... can't be an
+  idle hold pose." A motionless hold reaching the old duration
+  threshold was escalating to `willy_dragged_swing` even with zero
+  cursor movement — visually nonsensical once the art specifically
+  depicts real horizontal motion. Fixed asymmetrically rather than
+  dropping hold-duration entirely: `willy_dragged_annoyed`'s art has no
+  implied motion (an angry static-ish dangle), so a long motionless
+  hold reading as "still stuck up here, getting annoyed" is fine — it
+  still escalates, but jumps straight to `ANNOYED_DRAG_ASSET_ID`,
+  skipping `SWING_ASSET_ID` entirely. `SWING_ASSET_ID` is now reachable
+  **only** via horizontal cursor velocity (`abs(dx)/dt`, not total
+  displacement — a fast *vertical* shake must not trigger it either).
+  `DRAG_HOLD_TIER_SECONDS` (a 2-tuple) became `DRAG_HOLD_ANNOYED_SECONDS`
+  (a single scalar); `DRAG_VELOCITY_TIER_PX_S` became
+  `DRAG_HORIZONTAL_VELOCITY_TIER_PX_S`.
+- Also worth knowing for future single-clip art iterations: a full
+  `pixelpet.gate_export` run rebuilds *every* tracked clip from its own
+  source frames, which can surface unrelated upstream drift (caught
+  `willy_dragged`'s canvas having silently grown 92→102px from some
+  earlier, unrelated change while fixing the swing clip — reverted,
+  not this task's concern). `pixelpet/gate_export.py` gained a
+  `--only <asset_id>` flag (mirroring `bridge.py`'s `--full-one`) so a
+  single-clip tuning pass doesn't force-touch everything else.
+- **`willy_dragged_annoyed` needed facial movement, not just a static
+  angry pose** (live-test 2026-07-16, same PR). Two eye-blinks (frames
+  2-3 and 9-10 of the 16-frame loop) are baked in via a new
+  `close_largest_light_blob` helper in the factory's
+  `pixelpet/gate_export.py` — broader than the existing
+  `detect_eye_rect` (which only exact-matches a single palette color
+  and missed this pose's two-tone eye rendering, catching the tusk
+  instead once widened naively). Leg movement was also requested but
+  never produced a convincing result — tried locally (pixel-region
+  offset leaves visible seams at a load-bearing joint, unlike an eye's
+  small self-contained blob) and handed to Codex (two more approaches,
+  neither survived review) — recorded as failure #26 in the asset
+  factory's `README.md`. Shipping without leg movement; the pose still
+  reads as annoyed via face + blinks.
+- **The velocity signal itself was too noisy** (live-test 2026-07-20,
+  after the art landed in PR #19): raw per-`DragMoved` instantaneous
+  velocity, tracked as a running max, let a single sample spike the
+  tier straight to `ANNOYED_DRAG_ASSET_ID` — two events firing a few ms
+  apart with an ordinary small cursor jump computes to an unrealistic
+  px/s reading from the tiny `dt` alone. `SWING_ASSET_ID` read as
+  "hard to trigger" because it was almost always skipped entirely.
+  Fixed by replacing the raw max with an EMA (`DRAG_VELOCITY_EMA_ALPHA`,
+  `InteractionController`), then tracking the peak of the *smoothed*
+  signal — still sticky, still never steps back down mid-drag, but now
+  needs sustained fast swinging rather than one noisy sample to
+  escalate.
+- **Same session, two more findings from watching real dragging.**
+  (1) `SWING_ASSET_ID` stayed stuck facing one direction regardless of
+  which way the drag actually went — `self._facing` was only ever set
+  in `on_drag_ended`, never live during the drag, so a directional pose
+  had nothing to follow. Fixed by updating facing from `DragMoved` too,
+  with a hysteresis band (`FACING_DRAG_FLIP_THRESHOLD_PX = 20`, much
+  wider than the drop-time `FACING_FLIP_THRESHOLD_PX = 2`) so a real
+  swing's own oscillation doesn't flicker it every sample; re-dispatches
+  the active tier's clip on a flip so the pose actually shows the right
+  direction. (2) The EMA fix above wasn't enough on its own — sustained
+  fast velocity (not a single noisy sample) still reached
+  `ANNOYED_DRAG_ASSET_ID` almost immediately during a real swing, since
+  the EMA converges in a handful of samples. Rather than re-tuning
+  thresholds a third time, removed the velocity→annoyed path entirely:
+  velocity now only ever reaches `SWING_ASSET_ID`, hold-duration is the
+  only path to `ANNOYED_DRAG_ASSET_ID` (already confirmed working well
+  on its own). Each tier now has exactly one way in — no more shared
+  thresholds to keep in balance against each other.
+- **Same session, round three: the facing fix above had its own bug,
+  plus a new pickup-time false trigger.** (1) The hysteresis reference
+  point was anchored at the *last flip* and never moved while travel
+  continued in the same direction — reversing after a long swing needed
+  pulling back almost the entire swing distance before facing would
+  flip, which read as major lag. Fixed by tracking a *trailing
+  extremum* (the furthest x reached in the current facing direction)
+  instead of a fixed point, so a flip only needs pulling back
+  `FACING_DRAG_FLIP_THRESHOLD_PX` from wherever the swing actually
+  turned around. (2) `SWING_ASSET_ID` was firing the instant Willy was
+  picked up, before any real swinging — the very first `DragMoved` can
+  land a fraction of a ms after `DragStarted`'s own timestamp, and
+  dividing a real pixel jump by that near-zero `dt` spiked even the
+  EMA's first, most-diluted sample past the threshold. Added
+  `DRAG_VELOCITY_MIN_DT_S`: samples closer together than this are
+  ignored, and the reference point only advances once a sample is
+  actually used for a computation (not on every call) — otherwise a
+  burst of too-close-together events would keep resetting it and never
+  accumulate enough real time to produce a valid reading.
+- **`willy_fall` added alongside `willy_surprised` at fall start**
+  (2026-07-20, user request after live-testing the fixes above). The
+  asset factory's `make_drag.py` had built a `drag/fall` clip (panicked
+  wobble, from `Reference Images/generated/willy_falling_0.png`) since
+  the drag set was first authored, but it was never bridged to Gate A —
+  same situation D-17 found with the front-facing pose. No new
+  generation needed; added a `CLIPS` entry and exported. Rather than
+  replacing `willy_surprised`, `InteractionController.on_fall_started`
+  now picks randomly between the two (`FALL_START_REACTIONS`) via an
+  injected `random_choice` callable (`random.choice` by default,
+  deterministic in tests) — the same "each tier/reaction has exactly
+  one clear trigger" spirit as the earlier fixes, just applied to
+  variety instead of escalation.
+- **Same session, round four: the fall reaction switched poses mid-air,
+  and SWING needed to be reactive after all.** (1) A fall reaction
+  played once and handed off to `willy_dragged` if the fall was still
+  going when it finished (the original D-16 behaviour) — with
+  `willy_fall`'s much shorter runtime than `willy_surprised`'s, this
+  read as randomly switching poses partway down. Now plays with
+  `loop_override=True` and loops for the entire fall; only
+  `DragEnded`'s landing pose interrupts it. The now-dead `is_falling`
+  callback (`InteractionController`, `wiring.py`) was removed entirely
+  since nothing checks it anymore. (2) Reversing the "SWING is fully
+  asymmetric/never reached via a motionless hold" decision from round
+  two: it turns out SWING shouldn't be sticky at all — it's now
+  reactive to *current* swing velocity and ends as soon as the cursor
+  genuinely stops, rather than staying locked in once reached.
+  `ANNOYED_DRAG_ASSET_ID` stays a sticky ceiling, reached via
+  `DRAG_HOLD_ANNOYED_SECONDS` of *total* drag time (held still or
+  swung — that timer runs regardless of motion, so it already covers
+  "swung too long" and "held too long" as the same clock, without
+  needing two separate mechanisms). Since no `DragMoved` fires while
+  the cursor is genuinely stationary, `on_tick_elapsed` now clears the
+  velocity EMA whenever a full tick passes with no movement since the
+  *previous* tick — detection lands within one full silent tick
+  (up to ~2 ticks worst case after the last real movement), the
+  fastest achievable with only the existing ~1 Hz heartbeat.
+- **Round five: `DRAG_SWING_VELOCITY_PX_S` raised 600 → 1100** (same
+  session) — 600 triggered SWING during fairly ordinary dragging; it's
+  meant to be reserved for genuinely fast/rapid cursor movement, with
+  plain `DRAGGED_ASSET_ID` as the default the rest of the time.
+  First-pass tuning, same as every other threshold here.
