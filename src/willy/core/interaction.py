@@ -10,6 +10,7 @@ injected dispatch callable (the CommandRouter's).
 
 from __future__ import annotations
 
+import random
 from collections.abc import Callable, Sequence
 from datetime import datetime
 
@@ -29,6 +30,14 @@ from willy.contracts import (
 
 DRAGGED_ASSET_ID = "willy_dragged"
 STARTLE_ASSET_ID = "willy_surprised"
+FALL_ASSET_ID = "willy_fall"
+# D-19: two alternate one-shot reactions for the start of a real gravity
+# fall, picked at random each time — willy_fall (an existing pose, already
+# extracted/animated in the asset factory's raw pipeline but never bridged
+# to Gate A until now, same situation D-17 found with the front-facing
+# pose) was requested as a second option alongside the existing startle,
+# rather than a replacement for it.
+FALL_START_REACTIONS: tuple[str, ...] = (STARTLE_ASSET_ID, FALL_ASSET_ID)
 LANDING_ASSET_ID = "willy_drop_landing"
 FACING_FLIP_THRESHOLD_PX = 2  # tiny horizontal drift keeps current facing (at drop)
 # Pull-back from the most extreme x reached in the current facing
@@ -108,11 +117,14 @@ class InteractionController:
         is_falling: Callable[[], bool] = lambda: False,
         reaction_tiers: Sequence[tuple[int, str]] = REACTION_TIERS,
         annoyance_decay_per_second: float = ANNOYANCE_DECAY_PER_SECOND,
+        random_choice: Callable[[Sequence[str]], str] = random.choice,
     ) -> None:
         self._dispatch = dispatch
         self._state_dirty = state_dirty
         self._facing = initial_facing
         self._is_falling = is_falling
+        self._random_choice = random_choice
+        self._current_fall_reaction: str | None = None
         self._grab_x: int | None = None
         self._drag_hold_seconds = 0.0
         self._drag_velocity_ema_px_s = 0.0
@@ -196,14 +208,15 @@ class InteractionController:
         self._update_drag_tier()
 
     def on_fall_started(self) -> None:
-        """Real gravity drop begins (D-15/D-16): startle once, then the
-        dangle loop resumes for the rest of the fall via
-        on_animation_finished."""
+        """Real gravity drop begins (D-15/D-16): one of FALL_START_REACTIONS
+        once (D-19: picked at random each time), then the dangle loop
+        resumes for the rest of the fall via on_animation_finished."""
         self._reset_front_sequence()
-        self._play(STARTLE_ASSET_ID)
+        self._current_fall_reaction = self._random_choice(FALL_START_REACTIONS)
+        self._play(self._current_fall_reaction)
 
     def on_animation_finished(self, event: AnimationFinished) -> None:
-        if event.animation_id == STARTLE_ASSET_ID and self._is_falling():
+        if event.animation_id == self._current_fall_reaction and self._is_falling():
             # Still airborne: resume dangling instead of A-06's idle
             # default (dispatched here, it wins over idle — see A-06).
             self._play(DRAGGED_ASSET_ID)

@@ -22,10 +22,13 @@ from willy.core.interaction import (
     DRAG_HOLD_ANNOYED_SECONDS,
     DRAG_SWING_VELOCITY_PX_S,
     FACING_DRAG_FLIP_THRESHOLD_PX,
+    FALL_ASSET_ID,
+    FALL_START_REACTIONS,
     FRONT_ENTER_ASSET_ID,
     FRONT_HOLD_SECONDS,
     FRONT_IDLE_ASSET_ID,
     FRONT_LEAVE_ASSET_ID,
+    STARTLE_ASSET_ID,
     SWING_ASSET_ID,
 )
 
@@ -37,7 +40,12 @@ def rig():
     commands = []
     dirty_marks = []
     controller = InteractionController(
-        dispatch=commands.append, state_dirty=lambda: dirty_marks.append(True)
+        dispatch=commands.append,
+        state_dirty=lambda: dirty_marks.append(True),
+        # Deterministic by default (always STARTLE) so existing fall
+        # tests don't depend on real randomness; tests of the D-19
+        # random-choice behavior itself override this explicitly.
+        random_choice=lambda choices: STARTLE_ASSET_ID,
     )
     return controller, commands, dirty_marks
 
@@ -302,7 +310,10 @@ def test_fall_started_uses_current_facing(rig):
 def test_startle_finished_while_still_falling_resumes_dragged():
     commands = []
     controller = InteractionController(
-        dispatch=commands.append, state_dirty=lambda: None, is_falling=lambda: True
+        dispatch=commands.append,
+        state_dirty=lambda: None,
+        is_falling=lambda: True,
+        random_choice=lambda choices: STARTLE_ASSET_ID,
     )
     controller.on_fall_started()
     controller.on_animation_finished(
@@ -314,7 +325,10 @@ def test_startle_finished_while_still_falling_resumes_dragged():
 def test_startle_finished_after_landing_does_not_resume_dragged():
     commands = []
     controller = InteractionController(
-        dispatch=commands.append, state_dirty=lambda: None, is_falling=lambda: False
+        dispatch=commands.append,
+        state_dirty=lambda: None,
+        is_falling=lambda: False,
+        random_choice=lambda choices: STARTLE_ASSET_ID,
     )
     controller.on_fall_started()
     controller.on_animation_finished(
@@ -323,6 +337,40 @@ def test_startle_finished_after_landing_does_not_resume_dragged():
     assert [command.animation_id for command in commands] == [
         "willy_surprised"
     ]  # no extra dispatch
+
+
+def test_fall_reaction_is_chosen_from_both_options():
+    """D-19: willy_fall alternates randomly with willy_surprised, rather
+    than replacing it — the controller must offer both to the injected
+    chooser, not hardcode one."""
+    commands = []
+    offered = []
+
+    def spy_choice(choices):
+        offered.append(tuple(choices))
+        return choices[-1]
+
+    controller = InteractionController(
+        dispatch=commands.append, state_dirty=lambda: None, random_choice=spy_choice
+    )
+    controller.on_fall_started()
+    assert offered == [FALL_START_REACTIONS]
+    assert commands[-1].animation_id == FALL_ASSET_ID
+
+
+def test_fall_reaction_finished_while_still_falling_resumes_dragged():
+    """Whichever of the two fall reactions was actually picked must be
+    the one checked on completion, not a hardcoded STARTLE_ASSET_ID."""
+    commands = []
+    controller = InteractionController(
+        dispatch=commands.append,
+        state_dirty=lambda: None,
+        is_falling=lambda: True,
+        random_choice=lambda choices: FALL_ASSET_ID,
+    )
+    controller.on_fall_started()
+    controller.on_animation_finished(AnimationFinished(timestamp=TS, animation_id=FALL_ASSET_ID))
+    assert [command.animation_id for command in commands] == [FALL_ASSET_ID, "willy_dragged"]
 
 
 def test_unrelated_animation_finished_is_ignored(rig):
