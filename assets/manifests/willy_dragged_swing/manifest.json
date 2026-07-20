@@ -1,0 +1,83 @@
+{
+  "asset_id": "willy_dragged_swing",
+  "source_direction": "RIGHT",
+  "mirror_allowed": true,
+  "loop": true,
+  "priority": "REACTION",
+  "frames": [
+    {
+      "image": "willy_dragged_swing_00.png",
+      "duration_ms": 83
+    },
+    {
+      "image": "willy_dragged_swing_01.png",
+      "duration_ms": 83
+    },
+    {
+      "image": "willy_dragged_swing_02.png",
+      "duration_ms": 83
+    },
+    {
+      "image": "willy_dragged_swing_03.png",
+      "duration_ms": 83
+    },
+    {
+      "image": "willy_dragged_swing_04.png",
+      "duration_ms": 83
+    },
+    {
+      "image": "willy_dragged_swing_05.png",
+      "duration_ms": 83
+    },
+    {
+      "image": "willy_dragged_swing_06.png",
+      "duration_ms": 83
+    },
+    {
+      "image": "willy_dragged_swing_07.png",
+      "duration_ms": 83
+    },
+    {
+      "image": "willy_dragged_swing_08.png",
+      "duration_ms": 83
+    },
+    {
+      "image": "willy_dragged_swing_09.png",
+      "duration_ms": 83
+    },
+    {
+      "image": "willy_dragged_swing_10.png",
+      "duration_ms": 83
+    },
+    {
+      "image": "willy_dragged_swing_11.png",
+      "duration_ms": 83
+    },
+    {
+      "image": "willy_dragged_swing_12.png",
+      "duration_ms": 83
+    },
+    {
+      "image": "willy_dragged_swing_13.png",
+      "duration_ms": 83
+    },
+    {
+      "image": "willy_dragged_swing_14.png",
+      "duration_ms": 83
+    },
+    {
+      "image": "willy_dragged_swing_15.png",
+      "duration_ms": 83
+    }
+  ],
+  "anchors": {
+    "body_pivot": [
+      65,
+      109
+    ],
+    "ground": [
+      65,
+      138
+    ]
+  }
+}
