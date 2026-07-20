@@ -263,3 +263,22 @@ original "combined signal, whichever crosses first" design from D-18:
   only path to `ANNOYED_DRAG_ASSET_ID` (already confirmed working well
   on its own). Each tier now has exactly one way in — no more shared
   thresholds to keep in balance against each other.
+- **Same session, round three: the facing fix above had its own bug,
+  plus a new pickup-time false trigger.** (1) The hysteresis reference
+  point was anchored at the *last flip* and never moved while travel
+  continued in the same direction — reversing after a long swing needed
+  pulling back almost the entire swing distance before facing would
+  flip, which read as major lag. Fixed by tracking a *trailing
+  extremum* (the furthest x reached in the current facing direction)
+  instead of a fixed point, so a flip only needs pulling back
+  `FACING_DRAG_FLIP_THRESHOLD_PX` from wherever the swing actually
+  turned around. (2) `SWING_ASSET_ID` was firing the instant Willy was
+  picked up, before any real swinging — the very first `DragMoved` can
+  land a fraction of a ms after `DragStarted`'s own timestamp, and
+  dividing a real pixel jump by that near-zero `dt` spiked even the
+  EMA's first, most-diluted sample past the threshold. Added
+  `DRAG_VELOCITY_MIN_DT_S`: samples closer together than this are
+  ignored, and the reference point only advances once a sample is
+  actually used for a computation (not on every call) — otherwise a
+  burst of too-close-together events would keep resetting it and never
+  accumulate enough real time to produce a valid reading.
