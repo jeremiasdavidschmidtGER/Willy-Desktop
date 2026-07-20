@@ -31,14 +31,18 @@ DRAGGED_ASSET_ID = "willy_dragged"
 STARTLE_ASSET_ID = "willy_surprised"
 LANDING_ASSET_ID = "willy_drop_landing"
 FACING_FLIP_THRESHOLD_PX = 2  # tiny horizontal drift keeps current facing (at drop)
-# Net horizontal drift needed to flip facing *during* an active drag —
-# much bigger than FACING_FLIP_THRESHOLD_PX on purpose: a real swing
-# gesture oscillates left-right by design, so a tiny per-event threshold
-# would flicker facing on every jitter. Resets its reference point on
-# every flip, so it's "how far from the last flip," not total drift
-# (live-test 2026-07-20: facing was previously only set at drop, so
-# SWING_ASSET_ID's directional pose stayed stuck facing one way
-# regardless of which way the drag was actually going).
+# Pull-back from the most extreme x reached in the current facing
+# direction needed to flip facing *during* an active drag — much bigger
+# than FACING_FLIP_THRESHOLD_PX on purpose: a real swing gesture
+# oscillates left-right by design, so a tiny per-event threshold would
+# flicker facing on every jitter (live-test 2026-07-20: facing was
+# previously only set at drop, so SWING_ASSET_ID's directional pose
+# stayed stuck facing one way regardless of drag direction). Tracked
+# against a *trailing extremum*, not a fixed reference point — an
+# earlier version anchored the reference at the last flip and never
+# moved it while travel continued the same direction, so reversing
+# after a long swing needed pulling back almost the entire swing
+# distance before it would flip (read as major lag).
 FACING_DRAG_FLIP_THRESHOLD_PX = 20
 
 # D-18: escalating drag tiers, same "hanging" pose family as DRAGGED_ASSET_ID
@@ -67,8 +71,14 @@ DRAG_SWING_VELOCITY_PX_S = 600.0
 # DragMoved events a couple ms apart (a perfectly normal small jump at
 # real mouse-report rates) could spike to an unrealistic px/s reading
 # from a tiny dt alone. An EMA smooths that out; DRAG_VELOCITY_EMA_ALPHA
-# is the smoothing weight given to each new sample.
+# is the smoothing weight given to each new sample. DRAG_VELOCITY_MIN_DT_S
+# additionally *ignores* samples closer together than this (live-test
+# 2026-07-20: SWING was firing the instant Willy was picked up — the
+# very first DragMoved can land only fractions of a ms after
+# DragStarted's own timestamp, and dividing by that near-zero dt spikes
+# even the EMA's first, most-diluted sample past the threshold).
 DRAG_VELOCITY_EMA_ALPHA = 0.25
+DRAG_VELOCITY_MIN_DT_S = 0.01
 
 # A-08: the tier-1 click reaction is a three-stage front-facing sequence
 # (turn to face the camera, hold, turn back) rather than a flat one-shot
@@ -110,7 +120,7 @@ class InteractionController:
         self._drag_tier_rank = 0
         self._last_drag_x: int | None = None
         self._last_drag_timestamp: datetime | None = None
-        self._facing_ref_x: int | None = None
+        self._facing_extreme_x: int | None = None
         self._reaction_tiers = tuple(sorted(reaction_tiers, key=lambda tier: tier[0]))
         self._annoyance_decay_per_second = annoyance_decay_per_second
         self._annoyance_cap = self._reaction_tiers[-1][0] * 2.0
@@ -137,7 +147,7 @@ class InteractionController:
         self._drag_tier_rank = 0
         self._last_drag_x = event.grab_point.x
         self._last_drag_timestamp = event.timestamp
-        self._facing_ref_x = event.grab_point.x
+        self._facing_extreme_x = event.grab_point.x
         self._play(DRAGGED_ASSET_ID)
 
     def on_drag_moved(self, event: DragMoved) -> None:
@@ -149,24 +159,27 @@ class InteractionController:
         The raw per-event speed is smoothed via an EMA before feeding the
         tier thresholds — see DRAG_VELOCITY_EMA_ALPHA (live-test
         2026-07-20: an unsmoothed single-sample spike made SWING nearly
-        unreachable). Also updates facing live (with hysteresis, see
+        unreachable). Also updates facing live (tracked against a
+        trailing extremum with hysteresis, see
         FACING_DRAG_FLIP_THRESHOLD_PX) rather than only at drop, so a
         directional pose actually follows the current swing direction."""
-        if self._facing_ref_x is not None:
-            drift = event.point.x - self._facing_ref_x
-            new_facing = None
-            if drift > FACING_DRAG_FLIP_THRESHOLD_PX:
-                new_facing = Facing.RIGHT
-            elif drift < -FACING_DRAG_FLIP_THRESHOLD_PX:
-                new_facing = Facing.LEFT
-            if new_facing is not None and new_facing != self._facing:
-                self._facing = new_facing
-                self._facing_ref_x = event.point.x
+        if self._facing_extreme_x is not None:
+            if self._facing is Facing.RIGHT:
+                self._facing_extreme_x = max(self._facing_extreme_x, event.point.x)
+                pullback = self._facing_extreme_x - event.point.x
+                flip_to = Facing.LEFT
+            else:
+                self._facing_extreme_x = min(self._facing_extreme_x, event.point.x)
+                pullback = event.point.x - self._facing_extreme_x
+                flip_to = Facing.RIGHT
+            if pullback > FACING_DRAG_FLIP_THRESHOLD_PX:
+                self._facing = flip_to
+                self._facing_extreme_x = event.point.x
                 if self._drag_tier_rank > 0:
                     self._play(DRAG_TIER_ASSETS[self._drag_tier_rank])
-        if self._last_drag_timestamp is not None:
+        if self._last_drag_timestamp is not None and self._last_drag_x is not None:
             dt = (event.timestamp - self._last_drag_timestamp).total_seconds()
-            if dt > 0 and self._last_drag_x is not None:
+            if dt > DRAG_VELOCITY_MIN_DT_S:
                 instantaneous = abs(event.point.x - self._last_drag_x) / dt
                 self._drag_velocity_ema_px_s = (
                     DRAG_VELOCITY_EMA_ALPHA * instantaneous
@@ -175,8 +188,11 @@ class InteractionController:
                 self._drag_peak_smoothed_velocity_px_s = max(
                     self._drag_peak_smoothed_velocity_px_s, self._drag_velocity_ema_px_s
                 )
-        self._last_drag_x = event.point.x
-        self._last_drag_timestamp = event.timestamp
+                # Only advance the reference once it's actually been used —
+                # otherwise a burst of sub-threshold-dt events would keep
+                # resetting it and never accumulate enough real time.
+                self._last_drag_x = event.point.x
+                self._last_drag_timestamp = event.timestamp
         self._update_drag_tier()
 
     def on_fall_started(self) -> None:

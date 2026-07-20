@@ -122,7 +122,8 @@ def sustained_horizontal_move(controller, instantaneous_px_s, dt=0.05, steps=20,
     """Simulate steady horizontal dragging at a constant instantaneous
     speed for several samples, letting the velocity EMA converge close to
     `instantaneous_px_s` — matches a real sustained swing, unlike a single
-    huge jump (which the EMA deliberately dampens, live-test 2026-07-20)."""
+    huge jump (which the EMA deliberately dampens, live-test 2026-07-20).
+    Returns the final x reached, so callers don't have to recompute it."""
     x = 0.0
     t = start_at
     step_px = instantaneous_px_s * dt
@@ -130,6 +131,7 @@ def sustained_horizontal_move(controller, instantaneous_px_s, dt=0.05, steps=20,
         x += step_px
         t += dt
         move(controller, x=x, y=0, at_seconds=t)
+    return x
 
 
 def test_fast_horizontal_swing_escalates_to_swing_tier(rig):
@@ -159,6 +161,17 @@ def test_fast_vertical_only_movement_does_not_escalate_swing(rig):
     assert commands[-1].animation_id == "willy_dragged"
 
 
+def test_pickup_does_not_immediately_escalate_to_swing(rig):
+    """The very first DragMoved right after DragStarted can land only a
+    fraction of a ms later — dividing a real pixel jump by that
+    near-zero dt spiked velocity the instant Willy was picked up
+    (live-test 2026-07-20), before any real swinging happened."""
+    controller, commands, _ = rig
+    controller.on_drag_started(DragStarted(timestamp=TS, grab_point=ScreenPoint(x=0, y=0)))
+    move(controller, x=40, y=0, at_seconds=0.001)  # the drag-threshold-crossing jump itself
+    assert commands[-1].animation_id == "willy_dragged"
+
+
 def test_long_motionless_hold_escalates_straight_to_annoyed(rig):
     """A hold alone can only ever reach ANNOYED, never SWING — SWING's art
     depicts real dragging motion, so it must never fire from an idle
@@ -185,13 +198,15 @@ def test_no_amount_of_velocity_reaches_annoyed(rig):
 def test_drag_tier_is_sticky_and_does_not_step_back_down(rig):
     controller, commands, _ = rig
     controller.on_drag_started(DragStarted(timestamp=TS, grab_point=ScreenPoint(x=0, y=0)))
-    sustained_horizontal_move(controller, DRAG_SWING_VELOCITY_PX_S * 1.5)
+    reached_x = sustained_horizontal_move(controller, DRAG_SWING_VELOCITY_PX_S * 1.5)
     assert commands[-1].animation_id == SWING_ASSET_ID
     dispatch_count = len(commands)
     # A subsequent slow move must not un-escalate the tier or re-dispatch
     # the same clip, even though the EMA itself will start decaying back
     # down — the tier tracks the *peak* smoothed value, not the current one.
-    move(controller, x=1, y=0, at_seconds=10.0)
+    # Stay within the facing hysteresis band so this doesn't also trigger
+    # a (legitimate) facing-flip redispatch.
+    move(controller, x=reached_x - (FACING_DRAG_FLIP_THRESHOLD_PX - 1), y=0, at_seconds=10.0)
     assert commands[-1].animation_id == SWING_ASSET_ID
     assert len(commands) == dispatch_count  # no re-dispatch
 
@@ -231,6 +246,25 @@ def test_facing_flips_mid_drag_and_redisplays_the_active_tier(rig):
     assert commands[-1].animation_id == SWING_ASSET_ID  # re-dispatched, same tier
     assert commands[-1].facing is Facing.LEFT
     assert len(commands) == dispatch_count + 1  # exactly one re-dispatch for the flip
+
+
+def test_facing_flips_soon_after_reversal_not_after_retracing_the_whole_swing(rig):
+    """An earlier version anchored the hysteresis reference at the last
+    flip and never moved it while travel continued the same direction —
+    reversing after a long swing needed pulling back almost the entire
+    swing distance before it would flip, which read as major lag
+    (live-test 2026-07-20). It should only take a pull-back of
+    FACING_DRAG_FLIP_THRESHOLD_PX from the *most recent extreme*,
+    regardless of how far that extreme was from the start."""
+    controller, commands, _ = rig
+    controller.on_drag_started(DragStarted(timestamp=TS, grab_point=ScreenPoint(x=0, y=0)))
+    reached_x = sustained_horizontal_move(controller, DRAG_SWING_VELOCITY_PX_S * 1.5)
+    assert reached_x > 500  # a long swing, not a short one
+    assert controller.facing is Facing.RIGHT
+    # Pull back just past the threshold from the extreme — not anywhere
+    # close to retracing the full swing distance.
+    move(controller, x=reached_x - (FACING_DRAG_FLIP_THRESHOLD_PX + 1), y=0, at_seconds=100.0)
+    assert controller.facing is Facing.LEFT
 
 
 def test_small_jitter_does_not_flip_facing_mid_drag(rig):
