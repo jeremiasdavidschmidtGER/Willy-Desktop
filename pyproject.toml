@@ -15,7 +15,14 @@ dependencies = [
 dev = [
     "pytest>=8",
     "pytest-qt>=4.4",
-    "ruff>=0.4",
+    # Upper-bounded deliberately. CI installs these fresh on every run, so an
+    # open-ended linter pin means a new ruff release can turn CI red with no
+    # change to this repo - which is exactly what happened on 2026-07-27, when
+    # ruff 0.16.0 introduced 39 findings in code untouched since 2026-07-20 and
+    # failed an asset-only PR. A linter is a tool, not a dependency: it should
+    # move when someone chooses to move it. Raising this bound is its own task,
+    # because the 0.16 findings reach into src/willy/contracts/.
+    "ruff>=0.15,<0.16",
 ]
 
 [tool.setuptools.packages.find]
