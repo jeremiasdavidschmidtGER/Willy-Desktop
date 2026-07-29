@@ -11,7 +11,7 @@ Everything Willy lives under `...\Desktop\Dateien für KI-Projekte\`:
 | Path | What it is | Nature |
 |---|---|---|
 | `Willy App\willy-desktop\` ← **you are here** | **Product app**: PySide6 desktop pet that *consumes* exported clips | Strict, gate-driven: no network, local-first, contracts read-only. |
-| `Willy App\Python-Test\` | **Asset factory**: concept art → animations → Gate A clip export | Art lab. Uses OpenAI API + screenshots. Experimental. |
+| `Willy App\Python-Test\` | **Asset factory**: concept art → animations → Gate A clip export | Art lab. Uses OpenAI API + screenshots. Experimental, but gated since 2026-07-26: ruff + pytest + a Gate A invariant check in CI. 31-entry failure log in README. |
 | `Willy App\DevelopmentSpecs\` | Product vision & specs (also copied into this repo's `docs/`) | Reference only, not a git repo. |
 | `Willy_Archive\` | Retired attempts + the **Codex reference app** | **Never work here** — but `codex-product-app\` there has A-01..A-10 implemented (unreviewed); read its `persistence/`, `ui/window/`, `platform/win32.py` as *reference* before A-02/A-03. |
 
